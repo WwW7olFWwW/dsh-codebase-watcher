@@ -4,9 +4,11 @@
  *
  * 只依賴 `node:` 內建模組與 repo 內的檔案；不連 live GUI、不呼叫 CBM CLI。
  *
- * 1. 實際跑一次 `node --test`，取 TAP 的 pass/fail 數，比對 README.md、
+ * 1. 實際跑一次 `node --test`，取 TAP 的 pass/fail/skipped 數，比對 README.md、
  *    README.en.md、CONTRIBUTING.md、docs/DEVELOPMENT.md 的
  *    `**N tests / N pass / 0 fail**`，以及三處「N 項單元測試」註解。
+ *    少數測試需要本機 DSH 或平台後端，CI 會明確 skip；文件寫的是完整套件的
+ *    總數，因此用 `pass + skipped` 比對，且只允許 fail=0。
  * 2. verify-client / verify-keeper 的 `**N/N**` 只做文件互比
  *    （README 兩份 + DEVELOPMENT）：重跑前者需要 `dsh web`，後者需要
  *    CBM CLI；這裡不假裝能重跑 live。
@@ -84,14 +86,21 @@ function runUnitTests() {
     status: result.status,
     pass: lastNumber(stdout.match(/^# pass (\d+)$/gm) || []),
     failed: lastNumber(stdout.match(/^# fail (\d+)$/gm) || []),
+    skipped: lastNumber(stdout.match(/^# skipped (\d+)$/gm) || []),
+    cancelled: lastNumber(stdout.match(/^# cancelled (\d+)$/gm) || []),
+    todo: lastNumber(stdout.match(/^# todo (\d+)$/gm) || []),
     tests: lastNumber(stdout.match(/^# tests (\d+)$/gm) || []),
     stdout: stdout,
     stderr: stderr,
   };
 }
 
-function checkTestCounts(pass) {
+function checkTestCounts(total, pass, skipped) {
   const before = failures.length;
+  if (pass + skipped !== total) {
+    fail('node --test 的 pass(' + pass + ') + skipped(' + skipped + ') 不等於 tests('
+      + total + ')；有測試沒有回報結果');
+  }
   const rowFiles = ['README.md', 'README.en.md', 'CONTRIBUTING.md', 'docs/DEVELOPMENT.md'];
   let spots = 0;
   let i;
@@ -106,9 +115,9 @@ function checkTestCounts(pass) {
       spots += 1;
       const tests = Number(match[1]);
       const passed = Number(match[2]);
-      if (tests !== pass || passed !== pass) {
+      if (tests !== total || passed !== total) {
         fail(file + ':' + lineOf(text, match.index) + ' 寫 tests=' + tests + ' pass=' + passed
-          + '，實際 pass=' + pass);
+          + '，實際 tests=' + total + ' pass=' + pass + ' skipped=' + skipped);
       }
     }
     if (found === 0) {
@@ -129,9 +138,9 @@ function checkTestCounts(pass) {
     while ((match = spec.pattern.exec(text)) !== null) {
       found += 1;
       spots += 1;
-      if (Number(match[1]) !== pass) {
+      if (Number(match[1]) !== total) {
         fail(spec.file + ':' + lineOf(text, match.index) + ' 的註解寫 ' + match[1]
-          + '，實際 pass=' + pass);
+          + '，實際 tests=' + total + ' pass=' + pass + ' skipped=' + skipped);
       }
     }
     spec.pattern.lastIndex = 0;
@@ -141,7 +150,8 @@ function checkTestCounts(pass) {
   }
 
   if (failures.length === before) {
-    ok('單元測試 ' + pass + ' 與 ' + spots + ' 處文件一致');
+    ok('單元測試 ' + total + ' 與 ' + spots + ' 處文件一致'
+      + (skipped > 0 ? '（本輪 ' + pass + ' pass / ' + skipped + ' 項因環境跳過）' : ''));
   }
 }
 
@@ -297,14 +307,15 @@ function main() {
   if (tests.pass === undefined || tests.pass === null) {
     fail('讀不到 node --test 的 TAP pass 數');
   } else {
+    const skipped = tests.skipped === undefined ? 0 : tests.skipped;
     const summary = 'node --test：tests ' + String(tests.tests) + ' / pass '
-      + String(tests.pass) + ' / fail ' + String(tests.failed);
+      + String(tests.pass) + ' / skipped ' + String(skipped) + ' / fail ' + String(tests.failed);
     if (tests.status === 0 && tests.failed === 0) {
       ok(summary);
     } else {
       console.log('  run  ' + summary);
     }
-    checkTestCounts(tests.pass);
+    checkTestCounts(tests.tests, tests.pass, skipped);
   }
 
   checkVerifiedCounts();
