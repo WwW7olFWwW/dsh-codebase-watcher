@@ -1319,6 +1319,35 @@ async function main() {
     && !emptyNow.html.includes('掃描中…正在讀取專案清單'));
   emptyNow.unmount();
 
+  // 掃描失敗、清單也是空的：這只代表「還不知道」，不能說成「沒有專案」。
+  router.fixture = makeFixture({
+    projects: [],
+    status: Object.assign(makeFixture().status, {
+      lastRefreshError: 'verifier: 掃描失敗',
+      lastRefreshAt: undefined,
+      scan: { running: false, reason: 'manual', startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:01Z' },
+    }),
+  });
+  const scanFailedEmpty = mountPanel();
+  await scanFailedEmpty.settle();
+  checks.ok('掃描失敗的空清單：說「還不知道」而不是「沒有專案」',
+    scanFailedEmpty.html.includes('掃描失敗，還不知道有哪些專案')
+    && !scanFailedEmpty.html.includes('目前沒有任何已索引的專案'));
+  scanFailedEmpty.unmount();
+
+  // 自動化停用、從沒掃描過：同樣不能把「還沒看」說成「沒有」。
+  router.fixture = makeFixture({
+    projects: [],
+    status: Object.assign(makeFixture().status, {
+      enabled: false, lastRefreshAt: undefined, lastRefreshError: undefined,
+    }),
+  });
+  const disabledEmpty = mountPanel();
+  await disabledEmpty.settle();
+  checks.ok('停用且未掃描的空清單：引導手動重新載入',
+    disabledEmpty.html.includes('按「重新載入」手動掃描一次'));
+  disabledEmpty.unmount();
+
   // 空清單
   router.fixture = makeFixture({ projects: [] });
   const empty = mountPanel();

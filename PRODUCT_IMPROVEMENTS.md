@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-21（Round 1～Round 8 完成）
+> 更新：2026-10-21（Round 1～Round 9 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -9,8 +9,8 @@
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
 | 單元／整合測試 | `node --test test/*.test.js` | **244 / 244 pass，0 fail**（約 55 秒） |
-| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **302 / 302**（數字穩定，CI 同指令） |
-| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **304 / 304**（4 個 live 專案時；數量隨 per-project 檢查變動） |
+| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **304 / 304**（數字穩定，CI 同指令） |
+| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **306 / 306**（4 個 live 專案時；數量隨 per-project 檢查變動） |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
 | 語法 | `npm run test:syntax` | 通過 |
@@ -119,6 +119,15 @@
 - **殘留**：`--fixture-only` 不覆蓋「真實 `/state` 的形狀」；live 模式仍是本機手動
   步驟。CI 若要有真資料，得另起可播種的 CBM／GUI。
 
+### Round 9 — 空清單不再把「還不知道」說成「沒有」
+
+- **兩種空清單說實話**：掃描失敗時（有 `lastRefreshError`）改說「掃描失敗，還不知道
+  有哪些專案；修正後按重新載入再試」；`enabled=false` 且從未掃描時改說「自動化已停用，
+  還沒有掃描過」。優先序：掃描中 → 掃描失敗 → 停用未掃描 → 真的沒有專案。
+- **測試**：verify-client 302→304（2 條新夾具）；完整模式 306/306；單元測試 244/244。
+- **殘留**：只改文案，不改變「掃描失敗時清單可能停在舊資料」的事實；舊資料仍由
+  「資料時間」與錯誤橫幅標示。
+
 ## 待辦（依影響排序）
 
 | 優先 | 項目 | 證據／現況 | 建議 |
@@ -148,7 +157,7 @@
 npm test                      # 244
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
-npm run verify:client:fixture # 302，不需要 dsh web（CI 同指令）
-node tools/verify-client.mjs  # 304，完整模式需 dsh web（隨 live 專案數變動）
+npm run verify:client:fixture # 304，不需要 dsh web（CI 同指令）
+node tools/verify-client.mjs  # 306，完整模式需 dsh web（隨 live 專案數變動）
 node tools/verify-keeper.mjs  # 23，需真實 CBM 與已索引專案
 ```
