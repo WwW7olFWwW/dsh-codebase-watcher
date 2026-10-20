@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-20
+
 ### Fixed
 
 - **取消重建不再被記成失敗**：手動取消的那一次不進失敗數，會清掉 `lastError`，日誌改記
@@ -401,7 +403,8 @@
 - 單元測試 115 項，`node --test test/*.test.js` 全綠，不需要真的索引；CI 在 Node 20／22／24
   與「有／沒有 chokidar」六種組合上跑，且在沒有安裝 DSH 的機器上也能全綠（解析路徑用夾具驗證）。
 
-[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/releases/tag/v0.6.0
 [0.5.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/releases/tag/v0.5.1
 [0.5.0]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/releases/tag/v0.5.0
