@@ -30,7 +30,7 @@ CbmKeeper 協調器（lib/keeper.js）
 | [`lib/log.js`](../lib/log.js) | 帶時間戳的結構化日誌（記憶體環 + 落檔） |
 | [`lib/routes.js`](../lib/routes.js) | REST 控制面 |
 | [`lib/client.js`](../lib/client.js) | 瀏覽器半邊：設定頁觀測卡片 |
-| [`tools/verify-client.mjs`](../tools/verify-client.mjs) | 客戶端渲染驗證器（無瀏覽器也能驗證卡片畫得出來） |
+| [`tools/verify-client.mjs`](../tools/verify-client.mjs) | 客戶端渲染驗證器（無瀏覽器也能驗證卡片畫得出來）；`--fixture-only` 不連伺服器，CI 用這條 |
 | [`tools/verify-keeper.mjs`](../tools/verify-keeper.mjs) | Host 半邊對真實 CBM CLI 的驗證器（唯讀） |
 
 ## 落後語意（FR-9）

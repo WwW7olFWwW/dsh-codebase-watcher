@@ -21,11 +21,16 @@
 - `GET /state` 的 `status.scan`（`running`／`reason`／`startedAt`／`finishedAt`）與
   `status.cliChecked`；舊 host 沒有這兩個欄位時前端維持原行為。
 - 成效區塊在 `RebuildsUnchanged > 0` 時附上「· 未追上 N」，不再只有成功／失敗兩個數字。
+- `verify-client.mjs --fixture-only`（`npm run verify:client:fixture`）：不連伺服器，用夾具
+  跑完同一組斷言，輸出數量穩定；CI 新增這一步，文件改引用 **302/302**。完整模式仍會對
+  執行中的 `/state` 逐值比對。
+- HEAD 的逐值斷言從前 8 碼改成完整 40 碼，夾具也補上完整 HEAD；短碼先前會因為
+  「40 碼字串開頭剛好等於短碼」而通過，實際上沒有驗到卡片是否截斷。
 
 ### 驗證
 
-- 單元測試 **244/244**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **304/304**；
-  `tools/verify-keeper.mjs` **23/23**。
+- 單元測試 **244/244**（`node --test test/*.test.js`）；`tools/verify-client.mjs --fixture-only`
+  **302/302**、完整模式 **304/304**（4 個 live 專案）；`tools/verify-keeper.mjs` **23/23**。
 
 ## [0.6.2] - 2026-10-20
 

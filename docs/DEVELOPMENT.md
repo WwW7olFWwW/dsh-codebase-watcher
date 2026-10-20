@@ -5,7 +5,8 @@
 ```bash
 node --test test/*.test.js             # 單元測試（244 項，不需要真的索引）
 node tools/verify-keeper.mjs           # 對真實 CBM CLI 掃描（唯讀，需要 CLI 在 PATH）
-node tools/verify-client.mjs           # 客戶端渲染驗證（需要 dsh web 在跑）
+node tools/verify-client.mjs --fixture-only  # 客戶端渲染（302 項，不需要 dsh web；CI 同指令）
+node tools/verify-client.mjs           # 完整模式：多跑 live 專案的逐值比對（需要 dsh web）
 ```
 
 `lib/` 是純 ESM JavaScript，沒有建置步驟；profile 以 `link:` 指向本目錄。
@@ -36,7 +37,8 @@ systemctl --user restart dsh-web
 | 單元測試（NFR-7） | `node --test test/*.test.js` → **244 tests / 244 pass / 0 fail / 0 todo**（2026-10-21 於 Node 24.18 重跑；CI 另跑 Node 20／22／24 × chokidar 有／無） |
 | Host 半邊對真實 CLI | `node tools/verify-keeper.mjs` → **23/23**（唯讀掃描 + 「已不在圖譜」收斂 + 未納管不得重建 + 圖譜 UI 連結） |
 | 圖譜 UI 連結 | 同一支驗證器的四項檢查：狀態可讀、連結指向 `127.0.0.1:<ui_port>/?tab=graph`、探測結果是布林、每個已納管專案都有 `?project=` 深連結（對 `127.0.0.1:9749` 實測） |
-| 客戶端渲染 | `node tools/verify-client.mjs` → **304/304**（2026-10-21 重跑；用執行中伺服器的真實回應逐值比對，另含輪詢節流與退避的假時鐘測試、首次載入空窗、以及英文介面的零 CJK 斷言） |
+| 客戶端渲染 | `node tools/verify-client.mjs --fixture-only` → **302/302**（2026-10-21；CI 同指令、不需伺服器，數字穩定）。完整模式 `node tools/verify-client.mjs` 另對執行中的 `/state` 逐值比對（2026-10-21：304/304，4 個 live 專案；數量隨專案數變動） |
+| 客戶端回歸守門 | 同一支驗證器的夾具斷言：輪詢節流與退避、首次載入空窗、掃描完成後空清單、英文介面零 CJK、HEAD 以完整 40 碼逐值呈現 |
 | CLI 解析（FR-5） | `cliPath=~/.local/bin/codebase-memory-mcp`, `source=PATH`, `cliVersion=0.11.0`, `supported=true` |
 | 自動納管（FR-7/US-4） | 拋棄式倉庫索引後，下一次 `POST /check` 即被納管並建立監看 |
 | 落後偵測（FR-2） | 樣本倉庫：`graphHead=liveHead`, `stale=false`, `behindBy=0`, `confidence=head` |

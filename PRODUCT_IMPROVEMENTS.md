@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-21（Round 1～Round 7 完成）
+> 更新：2026-10-21（Round 1～Round 8 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -9,7 +9,8 @@
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
 | 單元／整合測試 | `node --test test/*.test.js` | **244 / 244 pass，0 fail**（約 55 秒） |
-| 客戶端渲染 | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **304 / 304**（4 個 live 專案時；數量隨 per-project 檢查變動） |
+| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **302 / 302**（數字穩定，CI 同指令） |
+| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **304 / 304**（4 個 live 專案時；數量隨 per-project 檢查變動） |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
 | 語法 | `npm run test:syntax` | 通過 |
@@ -104,13 +105,26 @@
 - **踩到並修掉**：`sinceStartRebuildMs > 0` 的假設在同毫秒完成時會紅（改 `Number.isFinite`）；
   字典漏 `label.scanRunning` 讓「掃描中…」顯示成鍵名，verify-client 擋下後補齊。
 
+### Round 8 — 客戶端驗證進 CI，數字不再隨 live 專案漂移
+
+- **`--fixture-only`**：同一組斷言改成餵夾具，不連伺服器。CI 新增
+  `npm run verify:client:fixture`（302/302）；文件改引用這個穩定數字，完整模式
+  （304/304，含 live 逐值比對）另行註明「隨專案數變動」。在此之前 `verify-client`
+  根本沒進 CI，2600 行的客戶端只能靠手跑。
+- **抓到一條假綠**：HEAD 逐值斷言只比前 8 碼，而卡片輸出的是完整 40 碼，兩者恰好
+  是子字串關係，所以「卡片截斷」永遠測不出來。改成比完整 40 碼，夾具也補上完整
+  HEAD，才真的驗到逐值呈現。
+- **測試**：`verify-client --fixture-only` 302/302、完整模式 304/304、`verify-keeper`
+  23/23、單元測試 244/244；`docs:check` 全綠（verify-client 數字三處一致）。
+- **殘留**：`--fixture-only` 不覆蓋「真實 `/state` 的形狀」；live 模式仍是本機手動
+  步驟。CI 若要有真資料，得另起可播種的 CBM／GUI。
+
 ## 待辦（依影響排序）
 
 | 優先 | 項目 | 證據／現況 | 建議 |
 | --- | --- | --- | --- |
 | P2 | 390px 設定頁不可用（跨層） | DSH settings 殼層只給 154px 內容區，plugin 卡片被壓到 106px、高 4400px；隱藏左 nav 也一樣。 | 需 DSH host 修 settings 窄版版面；plugin 端已讓「需注意」在 106px 可讀，不宣稱已修好。 |
 | P3 | 側邊欄指示只靠顏色與總數 | 11px 圓點＋數字，無文字；顏色是唯一線索。 | 寬版顯示「落後 N／失敗 N」，窄版用形狀；`aria-label` 已具備。 |
-| P3 | 文件與 CI 仍有時間性數字 | `verify-client` 數量隨 live 專案數變動（本次 304＝295 靜態＋per-project），CI 只跑單元測試。 | 加 `--fixture-only` 進 CI；verify-keeper 需可播種 fixture。 |
 
 ## 決策與限制
 
@@ -134,6 +148,7 @@
 npm test                      # 244
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
-node tools/verify-client.mjs  # 304，需 dsh web（隨 live 專案數變動）
+npm run verify:client:fixture # 302，不需要 dsh web（CI 同指令）
+node tools/verify-client.mjs  # 304，完整模式需 dsh web（隨 live 專案數變動）
 node tools/verify-keeper.mjs  # 23，需真實 CBM 與已索引專案
 ```

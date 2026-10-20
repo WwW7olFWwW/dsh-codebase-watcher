@@ -65,6 +65,10 @@ jobs:
       # package.json，於是截圖腳本在 CI 上沒被語法檢查到）。單一來源。
       - name: Parse every module
         run: npm run test:syntax
+      # 客戶端是手寫的動態模組，單元測試碰不到；fixture-only 讓它在 CI 上真的跑一遍
+      # （不需要 dsh web，輸出數量穩定，文件可以引用）。
+      - name: Client rendering (fixture-only)
+        run: npm run verify:client:fixture
       - name: Docs facts stay in sync
         run: npm run docs:check
       - name: package.json is valid and installable as a bundle

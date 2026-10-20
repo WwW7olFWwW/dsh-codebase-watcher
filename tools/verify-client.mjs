@@ -15,8 +15,12 @@
  * `document.hidden` 暫停。少了這一層，卡片上的「未實作狀態」永遠測不到。
  *
  * 用法：
- *   node tools/verify-client.mjs [base-url]
+ *   node tools/verify-client.mjs [base-url] [--fixture-only]
  * 預設 base-url 為 http://127.0.0.1:3080。
+ *
+ * `--fixture-only` 不連伺服器：把 live 那一段換成同一份夾具，逐項斷言照跑。
+ * 給 CI 與「沒有 dsh web 的機器」用，輸出數量是穩定的；不帶旗標的完整模式會
+ * 多跑 live 專案的逐值比對，數量隨專案數變動。
  */
 
 import { pathToFileURL } from 'node:url';
@@ -26,7 +30,10 @@ import { readFileSync } from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = join(HERE, '..');
-const BASE = process.argv[2] ?? 'http://127.0.0.1:3080';
+const ARGS = process.argv.slice(2);
+const FIXTURE_ONLY = ARGS.includes('--fixture-only');
+const BASE = ARGS.find(function (arg) { return arg.indexOf('--') !== 0; }) ?? 'http://127.0.0.1:3080';
+const LIVE_LABEL = FIXTURE_ONLY ? '夾具' : '真實資料';
 
 /** 驗證器自己的計時器：客戶端會被換上假時鐘，驗證器不能跟著被凍住。 */
 const REAL_SET_TIMEOUT = globalThis.setTimeout;
@@ -893,6 +900,7 @@ function makeFixture(overrides) {
       makeProject({
         key: '/tmp/demo/stale', name: 'demo-stale', rootPath: '/tmp/demo/stale',
         stale: true, behindBy: 3, dirty: true, reasons: ['head-advanced'],
+        graphHead: 'b'.repeat(40), liveHead: 'c'.repeat(40),
         graphHeadShort: 'bbbbbbbb', liveHeadShort: 'cccccccc',
         graphUrl: 'http://127.0.0.1:9749/?tab=graph&project=demo-stale',
       }),
@@ -1068,24 +1076,30 @@ async function main() {
   checks.ok('沒有「監看：監看中」這種同義重複', source.indexOf("'label.watcher') + '：'") === -1);
 
   // ------------------------------------------------ 真實伺服器（只讀 GET）
-  router.mode = 'live';
+  // `--fixture-only`：同一段斷言改餵夾具，讓 CI 與文件有一個不隨 live 專案數
+  // 變動的穩定數字；真實模式的差別只在資料來源與 per-project 檢查數量。
+  const liveFixture = FIXTURE_ONLY ? makeFixture() : undefined;
+  router.mode = FIXTURE_ONLY ? 'fixture' : 'live';
+  router.fixture = liveFixture;
   const live = mountPanel();
   const liveErrors = mini.errors.length;
   await live.settle();
   // 真伺服器會慢（正在跑重建時尤其）：等它把資料送進來，最多 8 秒。
   await live.waitUntil(function (html) { return !html.includes('載入中'); }, 8000);
-  checks.ok('元件以真實資料渲染未拋錯', mini.errors.length === liveErrors,
+  checks.ok('元件以' + LIVE_LABEL + '渲染未拋錯', mini.errors.length === liveErrors,
     mini.errors.slice(liveErrors).map(function (error) { return error.message; }).join(' | '));
   checks.ok('渲染有輸出', live.html.length > 500, String(live.html.length) + ' bytes');
-  checks.ok('真實資料只讀不寫（沒有送出任何 POST）', router.postCount() === 0, String(router.postCount()));
+  checks.ok(LIVE_LABEL + '只讀不寫（沒有送出任何 POST）', router.postCount() === 0, String(router.postCount()));
 
-  let liveData;
-  try {
-    const response = await REAL_FETCH(new URL('/api/codebase-watcher/state?log=0', BASE));
-    liveData = await response.json();
-  } catch (error) {
-    checks.ok('取得執行中伺服器的真實狀態', false, error instanceof Error ? error.message : String(error));
-    liveData = undefined;
+  let liveData = liveFixture;
+  if (!FIXTURE_ONLY) {
+    try {
+      const response = await REAL_FETCH(new URL('/api/codebase-watcher/state?log=0', BASE));
+      liveData = await response.json();
+    } catch (error) {
+      checks.ok('取得執行中伺服器的真實狀態', false, error instanceof Error ? error.message : String(error));
+      liveData = undefined;
+    }
   }
   if (liveData !== undefined) {
     const stale = liveData.projects.filter(function (project) { return project.stale === true; });
@@ -1106,10 +1120,11 @@ async function main() {
     for (const project of liveData.projects) {
       checks.ok('專案 ' + project.name + ' 出現在卡片上', live.html.includes(project.name));
       if (project.graphHead !== undefined) {
-        checks.ok('專案 ' + project.name + ' 的圖譜 HEAD 逐值呈現', live.html.includes(project.graphHeadShort), project.graphHeadShort);
+        // 用完整 40 碼比對：只比前 8 碼會被「HTML 裡有 40 碼、剛好包含短碼」蒙混過關。
+        checks.ok('專案 ' + project.name + ' 的圖譜 HEAD 逐值呈現', live.html.includes(project.graphHead), project.graphHead);
       }
       if (project.liveHead !== undefined) {
-        checks.ok('專案 ' + project.name + ' 的工作樹 HEAD 逐值呈現', live.html.includes(project.liveHeadShort), project.liveHeadShort);
+        checks.ok('專案 ' + project.name + ' 的工作樹 HEAD 逐值呈現', live.html.includes(project.liveHead), project.liveHead);
       }
     }
     checks.ok('篩選 chips 以角色群組呈現', live.html.includes('role="group"'));
@@ -2349,6 +2364,7 @@ async function main() {
     mini.errors.map(function (error) { return error.message; }).join(' | '));
 
   console.log('');
+  console.log('模式：' + (FIXTURE_ONLY ? 'fixture-only（不連伺服器）' : '完整（' + BASE + '）'));
   console.log('通過 ' + String(checks.passed) + ' 項，失敗 ' + String(checks.failures.length) + ' 項');
   if (checks.failures.length > 0) {
     for (const failure of checks.failures) console.log('  - ' + failure);
