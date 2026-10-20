@@ -1062,6 +1062,89 @@ test('C2：graphHead 讀取失敗不得寫入 indexedAt 快取，下一次必須
   assert.equal(record.lastCheckedError, undefined, '恢復後不該殘留舊錯誤');
 });
 
+test('FR-12：graphHead 讀取失敗時單一專案 check 要回 ok:false 並帶同一句錯誤', async function (t) {
+  const root = '/srv/check-head-fail';
+  const made = await makeKeeper(t, {
+    label: 'check-head-fail',
+    projects: [fakeProject({ name: 'check-head', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '3449ba2' },
+    config: { autoRebuild: false },
+  });
+  await made.keeper.start();
+  made.keeper.cbm.graphHead = async function () {
+    return { ok: false, error: '圖譜 HEAD 暫時讀不到' };
+  };
+
+  const result = await made.keeper.check(root);
+
+  assert.equal(result.ok, false, '圖譜 HEAD 讀不到不能回報成功');
+  assert.match(result.error, /圖譜 HEAD 暫時讀不到/);
+  const record = made.keeper.records.get(root);
+  assert.equal(record.lastCheckedError, result.error, '回傳錯誤要與卡片看到的一致');
+});
+
+test('FR-12：indexStatus 失敗時單一專案 check 要回 ok:false', async function (t) {
+  const root = '/srv/check-status-fail';
+  const made = await makeKeeper(t, {
+    label: 'check-status-fail',
+    projects: [fakeProject({ name: 'check-status', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '3449ba2' },
+    config: { autoRebuild: false },
+  });
+  await made.keeper.start();
+  made.keeper.cbm.indexStatus = async function () {
+    return { ok: false, error: 'CLI 失敗' };
+  };
+
+  const result = await made.keeper.check(root);
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /CLI 失敗/);
+  assert.equal(made.keeper.records.get(root).lastCheckedError, 'CLI 失敗');
+});
+
+test('FR-12：unborn HEAD 不算檢查失敗，單一專案 check 仍回 ok:true', async function (t) {
+  const root = '/srv/check-unborn';
+  const made = await makeKeeper(t, {
+    label: 'check-unborn',
+    projects: [fakeProject({ name: 'unborn', rootPath: root, graphHead: '3449ba2' })],
+    deps: {
+      readLiveHead: async function () {
+        return {
+          ok: false,
+          head: undefined,
+          error: "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.",
+        };
+      },
+    },
+    config: { autoRebuild: false },
+  });
+  await made.keeper.start();
+
+  const result = await made.keeper.check(root);
+
+  assert.equal(result.ok, true, 'unborn HEAD 是有效結果，不是檢查失敗');
+  const record = made.keeper.records.get(root);
+  assert.equal(record.stale, null);
+  assert.match(record.lastCheckedError, /尚無提交（unborn HEAD）/, '錯誤仍留給 UI 顯示');
+});
+
+test('FR-12：正常專案的單一專案 check 回 ok:true', async function (t) {
+  const root = '/srv/check-ok';
+  const made = await makeKeeper(t, {
+    label: 'check-ok',
+    projects: [fakeProject({ name: 'check-ok', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '3449ba2' },
+    config: { autoRebuild: false },
+  });
+  await made.keeper.start();
+
+  const result = await made.keeper.check(root);
+
+  assert.equal(result.ok, true);
+  assert.equal(made.keeper.records.get(root).stale, false);
+});
+
 test('C3：includeDirty=false 時完全不探測工作樹髒污（省一次 git status）', async function (t) {
   const root = '/srv/no-dirty-probe';
   let lenientProbes = 0;

@@ -671,6 +671,8 @@ function createFetchRouter() {
     configFixture: undefined,
     /** 設 true 時 `/config` 的 POST 一律回 500（測「儲存失敗不得清暫存」）。 */
     configFail: false,
+    /** 設 true 時 `/check` 的 POST 一律回 502（測錯誤訊息不得被吞）。 */
+    checkFail: false,
     /** 清空呼叫記錄。 */
     reset: function () { calls.length = 0; },
     /** 放掉被 hold 住的那個 POST（換它 resolve）。 */
@@ -749,7 +751,10 @@ function createFetchRouter() {
         payload.overridden = overridden;
         return { ok: true, config: payload.config, overridden, unknown: [] };
       }
-      if (path.endsWith('/check')) return { ok: true, status: {}, projects: router.fixture?.projects ?? [] };
+      if (path.endsWith('/check')) {
+        if (router.checkFail === true) return { __status: 502, error: '圖譜 HEAD 暫時讀不到' };
+        return { ok: true, status: {}, projects: router.fixture?.projects ?? [] };
+      }
       if (path.endsWith('/rebuild')) return { ok: true, queued: 2, requested: 3 };
       if (path.endsWith('/cancel')) return { ok: true, cancelled: true };
       if (path.endsWith('/watchers')) return { ok: true, affected: 1 };
@@ -1406,7 +1411,18 @@ async function main() {
   checks.ok('回饋區有 role="status"', interactive.html.includes('role="status"'));
   checks.ok('標題是語意標籤而不是 div', interactive.html.includes('<h3'));
   checks.ok('不可作為證據的宣告預設展開', interactive.html.includes('open="true"'));
-  checks.ok('回饋訊息由回應自行組成（無 note 也能說話）', interactive.html.includes('已重新檢查這個專案'));
+  const checkFeedback = interactive.text(function (node) { return node.props.role === 'status'; });
+  checks.ok('單專案檢查回饋不含專案總數', checkFeedback === '已重新檢查這個專案', checkFeedback);
+
+  // 502 的錯誤訊息不得被吞：/check 回應 body.error 要進 role=alert。
+  router.checkFail = true;
+  const failCheck = interactive.click(byAction('project:check', '/tmp/demo/fresh'));
+  checks.ok('502 情境仍點得到專案檢查', failCheck.ok === true, failCheck.reason);
+  await interactive.settle();
+  const checkAlert = interactive.text(function (node) { return node.props.role === 'alert'; });
+  checks.ok('502 錯誤訊息出現在 role=alert', typeof checkAlert === 'string'
+    && checkAlert.includes('圖譜 HEAD 暫時讀不到'), checkAlert);
+  router.checkFail = false;
 
   // 強制重建：兩段式確認
   const postsBefore = router.postCalls('/rebuild').length;

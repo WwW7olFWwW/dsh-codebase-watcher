@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-20（Round 1～Round 4 完成）
+> 更新：2026-10-20（Round 1～Round 5 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -8,8 +8,8 @@
 
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
-| 單元／整合測試 | `node --test test/*.test.js` | **235 / 235 pass，0 fail**（約 46 秒） |
-| 客戶端渲染 | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **293 / 293** |
+| 單元／整合測試 | `node --test test/*.test.js` | **239 / 239 pass，0 fail**（約 46 秒） |
+| 客戶端渲染 | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **295 / 295** |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
 | 語法 | `npm run test:syntax` | 通過 |
@@ -69,13 +69,21 @@
   若日後要退避，應另做失敗 TTL，而不是改回無條件快取。
 - **測試**：234→235（新增 1 條先紅後綠）；`npm test` 235/235、`verify-keeper` 23/23。
 
+### Round 5 — 單一專案的「立即檢查」不再謊報成功
+
+- **`checkProject()` 回傳證據結果**：只有 `indexStatus`／`graphHead` 失敗才是 `ok:false`；
+  工作樹 HEAD 讀不到（unborn HEAD／不是 git 工作樹）仍是有效檢查（`stale=null`），維持 `ok:true`。
+- **`POST /check {id}` 失敗回 502**：route 既有 `!ok → 502` 因此生效，客戶端 `run()` 會把
+  body 的錯誤訊息放進 `role=alert`；成功回饋也不再顯示錯的專案總數（原本「(3)」是全部專案數）。
+- **測試**：235→239（4 條 keeper，先紅 2 條）；verify-client 293→295（等於比對＋502 夾具）。
+  `npm test` 239/239、`verify-client` 295/295、`verify-keeper` 23/23。
+
 ## 待辦（依影響排序）
 
 | 優先 | 項目 | 證據／現況 | 建議 |
 | --- | --- | --- | --- |
 | P2 | 失敗與「HEAD 沒追上」的統計語意 | head-mismatch 現在會設 `lastError`、寫 warn，且首屏「需注意」看得到；但仍先 `succeeded++` 才比對，統計把「成功但沒追上」算進成功。 | 統計分「成功且追上」或加 `rebuildsHeadMismatch`；先定義產品語意再改。 |
 | P2 | 專案上限 64 會靜默丟棄、孤兒不釋放 | `MAX_TRACKED_PROJECTS=64`；`records.size` 含 `selected=false`／orphaned；只寫 warn。 | 上限只計 selected 且非 orphan，或淘汰最久 orphan 並留 `project.evicted`。 |
-| P2 | `POST /check` 永遠回 200 `ok:true` | 單 key 直接 `{ok:true}`，不看 `lastCheckedError`；客戶端因此顯示成功。 | 單 key 回 `ok: lastCheckedError===undefined`（unborn HEAD 例外），route 依結果回 502。 |
 | P2 | 初次載入的 0 專案與 0 筆統計容易誤讀 | routes 先註冊、keeper 背景 start；無 `scan.running`；CLI 未解析時卡片紅框。 | status 加 `scan{running,startedAt}`；中性「解析中／首次掃描中」；勿把 revision 當掃過。 |
 | P2 | 390px 設定頁不可用（跨層） | DSH settings 殼層只給 154px 內容區，plugin 卡片被壓到 106px、高 4400px；隱藏左 nav 也一樣。 | 需 DSH host 修 settings 窄版版面；plugin 端已讓「需注意」在 106px 可讀，不宣稱已修好。 |
 | P3 | 側邊欄指示只靠顏色與總數 | 11px 圓點＋數字，無文字；顏色是唯一線索。 | 寬版顯示「落後 N／失敗 N」，窄版用形狀；`aria-label` 已具備。 |
@@ -93,9 +101,9 @@
 ## 如何重跑
 
 ```bash
-npm test                      # 235
+npm test                      # 239
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
-node tools/verify-client.mjs  # 293，需 dsh web
+node tools/verify-client.mjs  # 295，需 dsh web
 node tools/verify-keeper.mjs  # 23，需真實 CBM 與已索引專案
 ```
