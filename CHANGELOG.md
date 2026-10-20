@@ -14,6 +14,13 @@
   仍可能掃描、恢復或留下排隊工作。
 - **REST 的 `id` 型別錯誤不再變成「全部」**：`/rebuild`、`/watchers` 收到非字串的
   `id` 時回錯誤，不會當成沒指定而對所有專案動手；未預期的內部錯誤改回 `500`。
+- **重建鎖會看持有者是否還活著**：鎖檔現在帶 pid 與 token；EEXIST 時先探測 pid，死掉的
+  立即接管，活著的再舊也不搶。沒有 pid 的舊格式才看 mtime，且門檻會隨
+  `rebuildTimeoutSeconds` 拉高（6 小時重建不會在 2 小時被誤接管）。release 只刪自己的
+  token，避免舊持有者刪掉新鎖、兩個行程同時重建。
+- **孫行程持有 pipe 時，逾時／取消一定會收尾**：`execFileText` 在 SIGTERM+SIGKILL 之外
+  再加一個獨立的 settle fallback；`close` 永遠不來時會 destroy stdout/stderr 並回報
+  `signal: 'SIGKILL'`，佇列不會卡在永不解決的 Promise。
 
 ### Added
 
@@ -28,7 +35,7 @@
 
 ### 驗證
 
-- 單元測試 **226/226**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **293/293**；
+- 單元測試 **234/234**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **293/293**；
   `tools/verify-keeper.mjs` **23/23**。
 
 ## [0.6.0] - 2026-10-07

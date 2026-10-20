@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CbmKeeper, RebuildStats } from '../lib/keeper.js';
 import { CliNotFoundError } from '../lib/cli.js';
@@ -32,6 +32,35 @@ async function readCalls(callsFile) {
     if (line.trim().length > 0) out.push(JSON.parse(line));
   }
   return out;
+}
+
+/**
+ * 預植一支重建鎖檔，可把 mtime 調到過去。
+ *
+ * @param {string} home - keeper 的狀態目錄。
+ * @param {string} text - 鎖檔內容（可故意放壞 JSON）。
+ * @param {number} [mtimeMs] - 要覆寫成的 mtime（毫秒時間戳）。
+ * @returns {Promise<string>} 鎖檔路徑。
+ */
+async function seedLock(home, text, mtimeMs) {
+  await mkdir(home, { recursive: true });
+  const file = join(home, 'rebuild.lock');
+  await writeFile(file, text, 'utf8');
+  if (mtimeMs !== undefined) {
+    const when = new Date(mtimeMs);
+    await utimes(file, when, when);
+  }
+  return file;
+}
+
+/**
+ * 讀出鎖檔 JSON。
+ *
+ * @param {string} file - 鎖檔路徑。
+ * @returns {Promise<object>} 解析後的內容。
+ */
+async function readLock(file) {
+  return JSON.parse(await readFile(file, 'utf8'));
 }
 
 /**
@@ -521,6 +550,118 @@ test('NFR-6：重建完成後鎖檔被釋放，且狀態檔留下結果', async 
   assert.equal(persisted.projects[root].rebuildState, 'idle');
   assert.equal(persisted.projects[root].name, 'lock');
   assert.equal(typeof persisted.projects[root].lastIndexedAt, 'string');
+});
+
+test('NFR-6：死 pid 的殘留鎖立即接管，鎖檔換成自己的 pid 與 token', async function (t) {
+  const made = await makeKeeper(t, { label: 'lock-dead-pid', projects: [], sha: {} });
+  const file = await seedLock(made.home, JSON.stringify({ pid: 99999999, at: new Date().toISOString() }));
+
+  const lock = await made.keeper.acquireLock();
+
+  assert.equal(lock.ok, true, '死 pid 不該白擋一輪');
+  assert.equal(typeof lock.token, 'string');
+  const onDisk = await readLock(file);
+  assert.equal(onDisk.pid, process.pid);
+  assert.equal(onDisk.token, lock.token);
+  const stale = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.lock-stale'; });
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0].data.reason, 'dead-pid');
+  assert.equal(stale[0].data.pid, 99999999);
+
+  await lock.release();
+  await assert.rejects(readFile(file, 'utf8'));
+});
+
+test('NFR-6：活著的 pid 不論 mtime 多舊都不能接管', async function (t) {
+  const made = await makeKeeper(t, { label: 'lock-alive-pid', projects: [], sha: {} });
+  const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
+  const file = await seedLock(
+    made.home,
+    JSON.stringify({ pid: process.pid, at: new Date(threeHoursAgo).toISOString() }),
+    threeHoursAgo,
+  );
+
+  const lock = await made.keeper.acquireLock();
+
+  assert.equal(lock.ok, false, '活著的 pid 再舊也不能接管');
+  assert.match(lock.error, /另一個行程正在重建/);
+  const onDisk = await readLock(file);
+  assert.equal(onDisk.pid, process.pid, '別人的鎖不得被刪');
+  assert.equal(onDisk.token, undefined);
+  const stale = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.lock-stale'; });
+  assert.equal(stale.length, 0);
+});
+
+test('NFR-6：沒有可解析 pid 的舊鎖，mtime 超過 2 小時才接管', async function (t) {
+  const made = await makeKeeper(t, { label: 'lock-old-mtime', projects: [], sha: {} });
+  const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
+  const file = await seedLock(made.home, '壞掉的 JSON', threeHoursAgo);
+
+  const lock = await made.keeper.acquireLock();
+
+  assert.equal(lock.ok, true);
+  const stale = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.lock-stale'; });
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0].data.reason, 'old-mtime');
+
+  await lock.release();
+  await assert.rejects(readFile(file, 'utf8'));
+});
+
+test('NFR-6：rebuildTimeoutSeconds=6h 時，無 pid 舊鎖的 stale 門檻拉到 6 小時 5 分', async function (t) {
+  const made = await makeKeeper(t, {
+    label: 'lock-long-rebuild',
+    projects: [],
+    sha: {},
+    config: { rebuildTimeoutSeconds: 21600 },
+  });
+  const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
+  const file = await seedLock(made.home, '{not json', threeHoursAgo);
+
+  const lock = await made.keeper.acquireLock();
+
+  assert.equal(lock.ok, false, '3 小時 < 6 小時 5 分，不能接管合法的長重建');
+  assert.equal(await readFile(file, 'utf8'), '{not json');
+  assert.equal(made.keeper.lockStaleMs(), 21600 * 1000 + 5 * 60 * 1000);
+});
+
+test('NFR-6：release 只刪自己的鎖；鎖被換成別人的 token 時保留並警告', async function (t) {
+  const made = await makeKeeper(t, { label: 'lock-release-owner', projects: [], sha: {} });
+  const file = join(made.home, 'rebuild.lock');
+  const lock = await made.keeper.acquireLock();
+  assert.equal(lock.ok, true);
+  assert.equal(typeof lock.token, 'string');
+
+  // 模擬 B 接管：鎖檔內容換成別人的 token。
+  await writeFile(file, JSON.stringify({ pid: process.pid, token: 'other-owner', at: new Date().toISOString() }), 'utf8');
+  await lock.release();
+
+  const onDisk = await readLock(file);
+  assert.equal(onDisk.token, 'other-owner', 'A 不得刪掉 B 的鎖');
+  const mismatch = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.lock-release-mismatch'; });
+  assert.equal(mismatch.length, 1);
+  assert.equal(mismatch[0].level, 'warn');
+  assert.equal(mismatch[0].data.file, file);
+
+  await rm(file, { force: true });
+});
+
+test('NFR-6：正常的 acquire／release 之後鎖檔消失，release 可重複呼叫', async function (t) {
+  const made = await makeKeeper(t, { label: 'lock-normal', projects: [], sha: {} });
+  const file = join(made.home, 'rebuild.lock');
+
+  const lock = await made.keeper.acquireLock();
+
+  assert.equal(lock.ok, true);
+  assert.equal(typeof lock.token, 'string');
+  assert.equal(lock.token.length > 0, true);
+  assert.equal((await readLock(file)).token, lock.token);
+  assert.equal((await readLock(file)).pid, process.pid);
+
+  await lock.release();
+  await assert.rejects(readFile(file, 'utf8'));
+  await lock.release();
+  await assert.rejects(readFile(file, 'utf8'));
 });
 
 test('NFR-6：stop() 會 join 正在跑的重建，回傳後不得再有任何狀態寫入', async function (t) {
@@ -2021,8 +2162,11 @@ test('總開關：停用後殘留的自動項目不會被 drainLoop 消化', asy
   const dropped = made.log.entries.filter(function (entry) { return entry.event === 'queue.cleared'; });
   assert.equal(dropped.length, 1);
   assert.equal(dropped[0].data.reason, 'disabled');
-  const persisted = JSON.parse(await readFile(join(made.home, 'state.json'), 'utf8'));
-  assert.equal(persisted.projects[rootB].rebuildState, 'idle');
+  // 佇列空了不代表狀態已落盤：drainLoop 的 setProject 是非同步的，等它寫完再讀檔。
+  await waitFor(async function () {
+    const persisted = JSON.parse(await readFile(join(made.home, 'state.json'), 'utf8'));
+    return persisted.projects[rootB] !== undefined && persisted.projects[rootB].rebuildState === 'idle';
+  }, { timeoutMs: 2000, label: 'B 的 idle 狀態落盤' });
 });
 
 test('總開關：disabled 啟動後打開，崩潰前卡在 running 的重建會被 recoverIntent 接回', async function (t) {

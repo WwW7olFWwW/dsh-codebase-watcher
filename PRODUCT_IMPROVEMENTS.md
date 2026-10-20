@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-20（Round 1＋Round 2 完成）
+> 更新：2026-10-20（Round 1～Round 3 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -8,7 +8,7 @@
 
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
-| 單元／整合測試 | `node --test test/*.test.js` | **226 / 226 pass，0 fail**（約 49 秒） |
+| 單元／整合測試 | `node --test test/*.test.js` | **234 / 234 pass，0 fail**（約 46 秒） |
 | 客戶端渲染 | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **293 / 293** |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
@@ -47,13 +47,24 @@
 - **`lib/cbm.js:361-366` 仍濾掉 `aborted`**：keeper 以同一顆 `AbortController` 的訊號補位，行為正確，
   介面契約待後續整理。
 
+### Round 3 — 重建鎖所有權、exec 保證收尾
+
+- **重建鎖有身份也有存活檢查**：鎖檔改寫 `{pid, token, at}`。EEXIST 時用 `kill(pid, 0)` 探活，
+  ESRCH 立即接管；活著的 pid 不論 mtime 多舊都回 busy。沒有可解析 pid 的舊格式才看 mtime，
+  門檻為 `max(2h, rebuildTimeoutMs + 5min)`，6 小時的合法重建不會在 2 小時被誤接管。
+  接管前重讀內容比對、最多重試 3 次；release 只刪自己 token 的鎖，mismatch 只警告。
+- **exec 一定 settle**：`terminate()` 另外 arm 一個 `killGraceMs + 1000` 的 fallback timer；
+  孫行程持有 stdout/stderr 讓 `close` 永遠不來時，destroy 兩條 pipe 並以
+  `signal: 'SIGKILL'` 收尾。新增 timeout／abort 兩條「孫行程持有 pipe」測試，先紅後綠。
+- **測試**：226→234（鎖 6 條、exec 2 條）。`npm test` 234/234、`verify-keeper` 23/23。
+- **殘留風險**：pid 重用（無 `/proc/<pid>/starttime` 輔助）仍可能誤判活著；fallback 只關 pipe，
+  不殺孫行程，孤兒 `sleep` 可活到自己的期限；崩潰在 open 與 write 之間留下的空鎖仍等 mtime。
+
 ## 待辦（依影響排序）
 
 | 優先 | 項目 | 證據／現況 | 建議 |
 | --- | --- | --- | --- |
-| P1 | 重建鎖沒有存活檢查與所有權 | `lib/keeper.js` 寫 `{pid,at}` 卻不讀 pid；只看 mtime >2h；release 直接 `rm`；config 重建上限可到 6h。死 pid 可擋 2h，舊持有者可刪新鎖造成並行。 | EEXIST 時解析 pid，`kill(pid,0)` 遇 ESRCH 立即清；release 比對 `{pid,at}`；stale 門檻大於最大重建時間或加心跳。 |
 | P1 | 失敗與「HEAD 沒追上」藏在 details | 先 `succeeded++` 才比對 graphHead 與 liveHead；頂列沒有 `lastError`；`rebuildWarnings` 沒有 head-mismatch。 | 頂列錯誤徽章；warnings 補 head-mismatch；統計分「成功且追上」。 |
-| P1 | `exec` 逾時不保證 settle | 逾時只 `terminate()`，`finish` 綁在 `close`；孫行程持有 stdout 時可能永不 close（稽核已重現）。 | terminate 後獨立 fallback timer 必定 finish，並 destroy stdout/stderr。 |
 | P2 | 專案上限 64 會靜默丟棄、孤兒不釋放 | `MAX_TRACKED_PROJECTS=64`；`records.size` 含 `selected=false`／orphaned；只寫 warn。 | 上限只計 selected 且非 orphan，或淘汰最久 orphan 並留 `project.evicted`。 |
 | P2 | graph HEAD 快取會被一次失敗毒化 | `head.ok=false` 也寫快取；後續同 `indexedAt` 不再查，`stale=null` 且無錯誤。 | 失敗不寫快取，錯誤進 `lastCheckedError`。 |
 | P2 | `POST /check` 永遠回 200 `ok:true` | 單 key 直接 `{ok:true}`，不看 `lastCheckedError`；客戶端因此顯示成功。 | 單 key 回 `ok: lastCheckedError===undefined`（unborn HEAD 例外），route 依結果回 502。 |
@@ -74,7 +85,7 @@
 ## 如何重跑
 
 ```bash
-npm test                      # 226
+npm test                      # 234
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
 node tools/verify-client.mjs  # 293，需 dsh web
