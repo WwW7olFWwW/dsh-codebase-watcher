@@ -21,6 +21,9 @@
 - **孫行程持有 pipe 時，逾時／取消一定會收尾**：`execFileText` 在 SIGTERM+SIGKILL 之外
   再加一個獨立的 settle fallback；`close` 永遠不來時會 destroy stdout/stderr 並回報
   `signal: 'SIGKILL'`，佇列不會卡在永不解決的 Promise。
+- **圖譜 HEAD 讀取失敗不再被快取**：一次暫時失敗原本會寫進 `indexedAt` 快取，後續同版本
+  的掃描不再重查，專案就靜默停在「無法判定」且沒有錯誤。現在失敗不進快取、錯誤會顯示，
+  下一輪會重查；恢復後錯誤自動清掉。
 
 ### Added
 
@@ -35,7 +38,7 @@
 
 ### 驗證
 
-- 單元測試 **234/234**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **293/293**；
+- 單元測試 **235/235**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **293/293**；
   `tools/verify-keeper.mjs` **23/23**。
 
 ## [0.6.0] - 2026-10-07

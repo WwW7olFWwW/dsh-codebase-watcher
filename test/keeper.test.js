@@ -1029,6 +1029,39 @@ test('C2：監看觸發的重驗走圖譜 HEAD 快取，不再每存一次檔打
   assert.equal(made.keeper.records.get(root).stale, true, '重驗仍然要更新落後狀態');
 });
 
+test('C2：graphHead 讀取失敗不得寫入 indexedAt 快取，下一次必須重查', async function (t) {
+  const root = '/srv/graph-head-failure-cache';
+  const made = await makeKeeper(t, {
+    label: 'graph-head-failure-cache',
+    projects: [fakeProject({ name: 'flaky-head', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '3449ba2' },
+    // 沒有時間旁證（headCommittedAt）：圖譜 HEAD 讀不到時才會停在 no-evidence。
+    facts: { headCommittedAt: undefined },
+    config: { autoRebuild: false },
+  });
+  let headQueries = 0;
+  made.keeper.cbm.graphHead = async function () {
+    headQueries += 1;
+    // 第一次模擬 query_graph 暫時失敗；第二次恢復正常。
+    if (headQueries === 1) return { ok: false, error: '圖譜 HEAD 暫時讀不到' };
+    return { ok: true, head: '3449ba2' };
+  };
+
+  await made.keeper.start();
+  const record = made.keeper.records.get(root);
+  assert.equal(headQueries, 1);
+  assert.equal(record.graphHead, undefined);
+  assert.equal(record.stale, null);
+  assert.match(record.lastCheckedError, /圖譜 HEAD 暫時讀不到/, '失敗要看得到，不能靜默停在 no-evidence');
+
+  // 同一個 indexedAt 再檢查一次：失敗不得被快取，必須重新查詢。
+  await made.keeper.checkProject(record, false);
+  assert.equal(headQueries, 2, '失敗的圖譜 HEAD 查詢不得被 indexedAt 快取吞掉');
+  assert.equal(record.graphHead, '3449ba2');
+  assert.equal(record.stale, false);
+  assert.equal(record.lastCheckedError, undefined, '恢復後不該殘留舊錯誤');
+});
+
 test('C3：includeDirty=false 時完全不探測工作樹髒污（省一次 git status）', async function (t) {
   const root = '/srv/no-dirty-probe';
   let lenientProbes = 0;

@@ -3,7 +3,7 @@
 ## 跑起來
 
 ```bash
-node --test test/*.test.js             # 單元測試（234 項，不需要真的索引）
+node --test test/*.test.js             # 單元測試（235 項，不需要真的索引）
 node tools/verify-keeper.mjs           # 對真實 CBM CLI 掃描（唯讀，需要 CLI 在 PATH）
 node tools/verify-client.mjs           # 客戶端渲染驗證（需要 dsh web 在跑）
 ```
@@ -33,7 +33,7 @@ systemctl --user restart dsh-web
 
 | 項目 | 證據 |
 |---|---|
-| 單元測試（NFR-7） | `node --test test/*.test.js` → **234 tests / 234 pass / 0 fail / 0 todo**（2026-10-20 於 Node 24.18 重跑；CI 另跑 Node 20／22／24 × chokidar 有／無） |
+| 單元測試（NFR-7） | `node --test test/*.test.js` → **235 tests / 235 pass / 0 fail / 0 todo**（2026-10-20 於 Node 24.18 重跑；CI 另跑 Node 20／22／24 × chokidar 有／無） |
 | Host 半邊對真實 CLI | `node tools/verify-keeper.mjs` → **23/23**（唯讀掃描 + 「已不在圖譜」收斂 + 未納管不得重建 + 圖譜 UI 連結） |
 | 圖譜 UI 連結 | 同一支驗證器的四項檢查：狀態可讀、連結指向 `127.0.0.1:<ui_port>/?tab=graph`、探測結果是布林、每個已納管專案都有 `?project=` 深連結（對 `127.0.0.1:9749` 實測） |
 | 客戶端渲染 | `node tools/verify-client.mjs` → **293/293**（2026-10-20 重跑；用執行中伺服器的真實回應逐值比對，另含輪詢節流與退避的假時鐘測試、以及英文介面的零 CJK 斷言） |
