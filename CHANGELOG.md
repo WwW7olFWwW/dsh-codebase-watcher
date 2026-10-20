@@ -27,6 +27,9 @@
 - **單一專案的「立即檢查」不再謊報成功**：`indexStatus`／`graphHead` 讀不到時 `POST /check`
   回 `502` 與真正的錯誤訊息，不再顯示「已重新檢查」。unborn HEAD 仍是有效的「無法判定」，
   不當成失敗。成功回饋也不再附帶錯的專案總數（原本顯示的是全部專案數，不是這次檢查數）。
+- **專案上限不再被孤兒佔死**：64 個名額只計「仍在上游、被選取、非孤兒」的專案；上游已刪
+  或被 include/exclude 排除的舊記錄不再擋住新專案，同一輪就能納管。`project.limit-reached`
+  警告也會帶上目前的有效數量。
 
 ### Added
 
@@ -41,7 +44,7 @@
 
 ### 驗證
 
-- 單元測試 **239/239**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **295/295**；
+- 單元測試 **241/241**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **295/295**；
   `tools/verify-keeper.mjs` **23/23**。
 
 ## [0.6.0] - 2026-10-07

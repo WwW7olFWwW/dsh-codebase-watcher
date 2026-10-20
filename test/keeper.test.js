@@ -64,6 +64,19 @@ async function readLock(file) {
 }
 
 /**
+ * 改寫假 CLI 的上游專案清單（模擬上游新增／移除專案）。
+ *
+ * @param {string} stateFile - cbm-state.json 路徑。
+ * @param {object[]} projects - 新的專案清單。
+ * @returns {Promise<void>} 寫入完成。
+ */
+async function writeUpstreamProjects(stateFile, projects) {
+  const state = JSON.parse(await readFile(stateFile, 'utf8'));
+  state.projects = projects;
+  await writeFile(stateFile, JSON.stringify(state), 'utf8');
+}
+
+/**
  * 組出一台受測的 keeper 與它的注入事實。
  *
  * @param {object} t - node:test 的 TestContext。
@@ -1382,6 +1395,85 @@ test('D1：被設定排除但上游仍回報的專案不是孤兒；上游不再
   const orphanLogs = made.log.entries.filter(function (entry) { return entry.event === 'project.orphaned'; });
   assert.equal(orphanLogs.length, 1);
   assert.equal(orphanLogs[0].data.name, 'excluded');
+});
+
+test('上限：孤兒不佔名額，同一輪消失的專案不得擋掉新專案', async function (t) {
+  const base = '/srv/limit-orphans';
+  const projects = [];
+  for (let index = 0; index < 64; index += 1) {
+    projects.push(fakeProject({ name: 'orphan-' + index, rootPath: base + '-' + index, graphHead: '3449ba2' }));
+  }
+  const made = await makeKeeper(t, {
+    label: 'limit-orphans',
+    projects,
+    config: { autoRebuild: false },
+  });
+  // 這一條只驗收納上限；掃描本身用不 spawn 的樁，讓 64 筆專案不要各付一次 CLI。
+  made.keeper.cbm.indexStatus = async function () {
+    return { ok: true, status: { indexedAt: '2026-10-03T20:29:29Z', nodes: 1, edges: 1, parsePartialCount: 0, notIndexedFilesCount: 0 } };
+  };
+  made.keeper.cbm.graphHead = async function () { return { ok: true, head: '3449ba2' }; };
+  await made.keeper.start();
+
+  assert.equal(made.keeper.records.size, 64, '先裝滿 64 個有效專案');
+
+  // 上游一次消失：64 筆全部變孤兒，但記錄保留給 UI 顯示。
+  await writeUpstreamProjects(made.stateFile, []);
+  await made.keeper.refresh('manual');
+  const orphans = Array.from(made.keeper.records.values()).filter(function (record) { return record.orphaned === true; });
+  assert.equal(orphans.length, 64, '孤兒不得被刪除');
+  assert.equal(made.keeper.records.size, 64);
+
+  // 同一輪就出現新專案：舊碼會拿 records.size（64）擋掉它。
+  const newRoot = base + '-new';
+  await writeUpstreamProjects(made.stateFile, [
+    fakeProject({ name: 'newcomer', rootPath: newRoot, graphHead: '3449ba2' }),
+  ]);
+  const result = await made.keeper.refresh('manual');
+
+  assert.equal(result.ok, true);
+  const adopted = made.keeper.records.get(newRoot);
+  assert.notEqual(adopted, undefined, '孤兒不佔名額，新專案必須在同一輪被納管');
+  assert.equal(adopted.selected, true);
+  assert.equal(adopted.orphaned, false);
+  assert.equal(made.keeper.records.size, 65, '孤兒保留＋新專案納管');
+});
+
+test('上限：64 個有效專案時第 65 個不納管，警告要帶 active', async function (t) {
+  const base = '/srv/limit-full';
+  const projects = [];
+  for (let index = 0; index < 64; index += 1) {
+    projects.push(fakeProject({ name: 'full-' + index, rootPath: base + '-' + index, graphHead: '3449ba2' }));
+  }
+  const made = await makeKeeper(t, {
+    label: 'limit-full',
+    projects,
+    config: { autoRebuild: false },
+  });
+  // 這一條只驗收納上限；掃描本身用不 spawn 的樁，讓 64 筆專案不要各付一次 CLI。
+  made.keeper.cbm.indexStatus = async function () {
+    return { ok: true, status: { indexedAt: '2026-10-03T20:29:29Z', nodes: 1, edges: 1, parsePartialCount: 0, notIndexedFilesCount: 0 } };
+  };
+  made.keeper.cbm.graphHead = async function () { return { ok: true, head: '3449ba2' }; };
+  await made.keeper.start();
+
+  const newRoot = base + '-blocked';
+  await writeUpstreamProjects(made.stateFile, projects.concat([
+    fakeProject({ name: 'blocked-new', rootPath: newRoot, graphHead: '3449ba2' }),
+  ]));
+  const result = await made.keeper.refresh('manual');
+
+  assert.equal(result.ok, true);
+  assert.equal(made.keeper.records.get(newRoot), undefined, '第 65 個不得被納管');
+  const warnings = made.log.entries.filter(function (entry) { return entry.event === 'project.limit-reached'; });
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].data.limit, 64);
+  assert.equal(warnings[0].data.skipped, 'blocked-new');
+  assert.equal(warnings[0].data.active, 64, '警告要說得出目前幾個有效專案');
+  const active = Array.from(made.keeper.records.values()).filter(function (record) {
+    return record.selected === true && record.orphaned !== true;
+  });
+  assert.equal(active.length, 64);
 });
 
 test('D3：日誌落檔失敗與狀態載入失敗都會出現在 status()', async function (t) {
