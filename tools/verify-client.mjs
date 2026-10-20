@@ -2092,6 +2092,15 @@ async function main() {
       return candidate.tag === 'label' && candidate.props.htmlFor === node.props.id;
     });
   }));
+  checks.ok('設定：每個欄位都有一行說明，且不顯示生鍵', configFields.every(function (field) {
+    const help = noOverride.nodes.filter(function (node) {
+      return node.props['data-dsw-config-help'] === field;
+    })[0];
+    const text = help === undefined ? '' : nodeText(help);
+    return text.length > 0 && text.indexOf('config.help.') === -1;
+  }));
+  checks.ok('設定：dirtySettleSeconds 的說明講清楚 0＝立即重建',
+    noOverride.html.includes('0＝立即重建'));
   checks.ok('設定：文案說「這裡可以直接改值」並說明夾值',
     noOverride.html.includes('這裡可以直接改值') && noOverride.html.includes('夾到合法範圍'));
   checks.ok('設定：不再指向那個不存在的插件設定表單', !noOverride.html.includes('那一列的設定'));

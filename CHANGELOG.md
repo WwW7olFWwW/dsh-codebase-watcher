@@ -25,15 +25,17 @@
   `status.cliChecked`；舊 host 沒有這兩個欄位時前端維持原行為。
 - 成效區塊在 `RebuildsUnchanged > 0` 時附上「· 未追上 N」，不再只有成功／失敗兩個數字。
 - `verify-client.mjs --fixture-only`（`npm run verify:client:fixture`）：不連伺服器，用夾具
-  跑完同一組斷言，輸出數量穩定；CI 新增這一步，文件改引用 **304/304**。完整模式仍會對
+  跑完同一組斷言，輸出數量穩定；CI 新增這一步，文件改引用 **306/306**。完整模式仍會對
   執行中的 `/state` 逐值比對。
+- 設定區塊的 18 個欄位各有一行說明（zh/en），不用離開頁面查文件；host 新增而 client
+  未跟上的欄位不畫說明，不會露出 `config.help.xxx` 生鍵。
 - HEAD 的逐值斷言從前 8 碼改成完整 40 碼，夾具也補上完整 HEAD；短碼先前會因為
   「40 碼字串開頭剛好等於短碼」而通過，實際上沒有驗到卡片是否截斷。
 
 ### 驗證
 
 - 單元測試 **244/244**（`node --test test/*.test.js`）；`tools/verify-client.mjs --fixture-only`
-  **304/304**、完整模式 **306/306**（4 個 live 專案）；`tools/verify-keeper.mjs` **23/23**。
+  **306/306**、完整模式 **308/308**（4 個 live 專案）；`tools/verify-keeper.mjs` **23/23**。
 
 ## [0.6.2] - 2026-10-20
 

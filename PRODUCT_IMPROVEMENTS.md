@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-21（Round 1～Round 9 完成）
+> 更新：2026-10-21（Round 1～Round 10 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -9,8 +9,8 @@
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
 | 單元／整合測試 | `node --test test/*.test.js` | **244 / 244 pass，0 fail**（約 55 秒） |
-| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **304 / 304**（數字穩定，CI 同指令） |
-| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **306 / 306**（4 個 live 專案時；數量隨 per-project 檢查變動） |
+| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **306 / 306**（數字穩定，CI 同指令） |
+| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **308 / 308**（4 個 live 專案時；數量隨 per-project 檢查變動） |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
 | 語法 | `npm run test:syntax` | 通過 |
@@ -128,6 +128,15 @@
 - **殘留**：只改文案，不改變「掃描失敗時清單可能停在舊資料」的事實；舊資料仍由
   「資料時間」與錯誤橫幅標示。
 
+### Round 10 — 設定欄位就地看得懂
+
+- **每個設定欄位加一行說明**：展開「設定」後，18 個欄位不再只有 `dirtySettleSeconds`
+  這種生鍵。說明由字典提供（zh/en 各 18 條），host 若新增 client 不認識的欄位就不畫，
+  不會露出 `config.help.xxx`。
+- **驗證**：verify-client `--fixture-only` 304→306（2 條）；完整模式 308/308；
+  以 headless Chromium 開設定頁截圖確認實際排版（`~/scratch/ui-audit/r10-config.png`）。
+- **殘留**：說明是摘要，完整語意仍在 `docs/CONFIGURATION.md`；兩邊若分岔，文件是權威。
+
 ## 待辦（依影響排序）
 
 | 優先 | 項目 | 證據／現況 | 建議 |
@@ -157,7 +166,7 @@
 npm test                      # 244
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
-npm run verify:client:fixture # 304，不需要 dsh web（CI 同指令）
-node tools/verify-client.mjs  # 306，完整模式需 dsh web（隨 live 專案數變動）
+npm run verify:client:fixture # 306，不需要 dsh web（CI 同指令）
+node tools/verify-client.mjs  # 308，完整模式需 dsh web（隨 live 專案數變動）
 node tools/verify-keeper.mjs  # 23，需真實 CBM 與已索引專案
 ```
