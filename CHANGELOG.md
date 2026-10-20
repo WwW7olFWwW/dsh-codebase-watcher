@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-20
+
+### 維護
+
+- **`docs:check` 不再把 CI 的環境性 skip 當成文件漂移**：CI 沒有本機 DSH，2 條需要真機
+  profile 的測試會明確 skip；守門現在用 `pass + skipped` 比對文件總數，仍要求 `fail=0`。
+  這版與 0.6.1 的執行期程式相同，發佈是為了讓 release tag 的 CI 全綠。
+
 ## [0.6.1] - 2026-10-20
 
 ### Fixed
@@ -403,7 +411,8 @@
 - 單元測試 115 項，`node --test test/*.test.js` 全綠，不需要真的索引；CI 在 Node 20／22／24
   與「有／沒有 chokidar」六種組合上跑，且在沒有安裝 DSH 的機器上也能全綠（解析路徑用夾具驗證）。
 
-[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/releases/tag/v0.6.0
 [0.5.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/releases/tag/v0.5.1
