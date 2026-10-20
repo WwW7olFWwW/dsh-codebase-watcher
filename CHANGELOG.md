@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **首次載入不再把「還沒掃完」說成「什麼都沒有」**：路由比啟動掃描更早註冊，卡片第一次
+  載入時 `projects` 還是空的、CLI 還沒解析完，原本會直接顯示「目前沒有任何已索引的專案」
+  與紅框「（未解析）」。`status` 新增 `scan` 與 `cliChecked`，卡片在掃描中顯示「掃描中…／
+  正在讀取專案清單與 HEAD」，CLI 解析中顯示「檢查中…」；紅框與「未解析」只留給真的失敗。
+- **「成功但 HEAD 沒追上」不再算進成功**：重建跑完、上游回報成功，但圖譜 HEAD 仍與工作樹
+  不同時，原本先記一次成功再顯示錯誤，卡片會同時說「全部成功」又列出落後專案。現在獨立
+  計入 `RebuildsUnchanged`（與 `RebuildsSucceeded` 互斥），日誌 `rebuild.done` 帶 `caughtUp`，
+  失敗率的分母也把它算進去。
+
+### Added
+
+- `GET /state` 的 `status.scan`（`running`／`reason`／`startedAt`／`finishedAt`）與
+  `status.cliChecked`；舊 host 沒有這兩個欄位時前端維持原行為。
+- 成效區塊在 `RebuildsUnchanged > 0` 時附上「· 未追上 N」，不再只有成功／失敗兩個數字。
+
+### 驗證
+
+- 單元測試 **244/244**（`node --test test/*.test.js`）；`tools/verify-client.mjs` **304/304**；
+  `tools/verify-keeper.mjs` **23/23**。
+
 ## [0.6.2] - 2026-10-20
 
 ### 維護

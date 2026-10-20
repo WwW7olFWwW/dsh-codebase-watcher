@@ -877,6 +877,13 @@ function makeFixture(overrides) {
       graphUi: { state: 'ok', url: 'http://127.0.0.1:9749/?tab=graph', reachable: true },
       warnings: [],
       lastRefreshAt: '2026-10-05T00:00:00Z',
+      cliChecked: true,
+      scan: {
+        running: false,
+        reason: 'startup',
+        startedAt: '2026-10-05T00:00:00Z',
+        finishedAt: '2026-10-05T00:00:01Z',
+      },
       watching: 2,
       queue: [],
       config: { autoRebuild: true, watchEnabled: true },
@@ -1257,6 +1264,45 @@ async function main() {
   checks.ok('CLI 未解析：列出已嘗試的路徑', noCli.html.includes('/home/demo/.local/bin/codebase-memory-mcp'));
   checks.ok('CLI 未解析：給出可複製的診斷指令', noCli.html.includes('command -v codebase-memory-mcp'));
   noCli.unmount();
+
+  // 首次載入：CLI 還沒解析完、第一輪掃描還沒回來。兩件事都「還沒有答案」，
+  // 不能畫成「（未解析）」紅字或「沒有任何專案」——那會讓第一次開頁的人以為壞了。
+  const firstLoadStatus = Object.assign(makeFixture().status, {
+    cliPath: undefined,
+    cliError: undefined,
+    cliCandidates: [],
+    cliChecked: false,
+    lastRefreshAt: undefined,
+    stats: undefined,
+    scan: { running: true, reason: 'startup', startedAt: new Date().toISOString() },
+  });
+  router.fixture = { status: firstLoadStatus, projects: [], caveats: [], log: [] };
+  const firstLoad = mountPanel();
+  await firstLoad.settle();
+  checks.ok('首次載入：CLI 顯示「檢查中…」而不是紅字（未解析）',
+    firstLoad.html.includes('檢查中…') && !firstLoad.html.includes('（未解析）'));
+  checks.ok('首次載入：健康區塊不因尚未解析就標紅',
+    !firstLoad.nodes.some(function (node) {
+      return String(node.props?.style?.border ?? '').includes('var(--dsw-alias-state-error-primary)');
+    }));
+  checks.ok('首次載入：上一次掃描欄位說「掃描中…」',
+    firstLoad.nodes.some(function (node) {
+      const text = nodeText(node);
+      return text.includes('上次掃描') && text.includes('掃描中');
+    }));
+  checks.ok('首次載入：清單說「掃描中」而不是「沒有專案」',
+    firstLoad.html.includes('掃描中…正在讀取專案清單')
+    && !firstLoad.html.includes('目前沒有任何已索引的專案'));
+  firstLoad.unmount();
+
+  // 掃描收尾後仍然沒有專案：這時候「沒有專案」才是事實。
+  router.fixture = makeFixture({ projects: [] });
+  const emptyNow = mountPanel();
+  await emptyNow.settle();
+  checks.ok('掃描完成後：才說「沒有任何專案」',
+    emptyNow.html.includes('目前沒有任何已索引的專案')
+    && !emptyNow.html.includes('掃描中…正在讀取專案清單'));
+  emptyNow.unmount();
 
   // 空清單
   router.fixture = makeFixture({ projects: [] });
@@ -1812,7 +1858,8 @@ async function main() {
     last24hRebuildMs: 21000,
   };
   const zeroStats = {
-    sinceStartRebuildsQueued: 0, sinceStartRebuildsSucceeded: 0, sinceStartRebuildsFailed: 0,
+    sinceStartRebuildsQueued: 0, sinceStartRebuildsSucceeded: 0, sinceStartRebuildsUnchanged: 0,
+    sinceStartRebuildsFailed: 0,
     sinceStartRebuildsAborted: 0, sinceStartSkippedCooldown: 0, sinceStartSkippedGate: 0,
     sinceStartSettled: 0, sinceStartSettleDeferred: 0, sinceStartChecksShortCircuited: 0,
     sinceStartRebuildMs: 0,
@@ -1842,6 +1889,19 @@ async function main() {
     withStats.html.includes('排入 12') && !withStats.html.includes('排入 3'));
   checks.ok('成效：措辭不得出現「總計」或「歷史」', !/總計|歷史/.test(withStats.html));
   withStats.unmount();
+
+  // 「CLI 說成功、圖譜沒追上」是獨立結果：不能混進成功數字，否則同一頁會同時
+  // 說「全部成功」又列出落後專案。UI 要把它單獨講出來。
+  router.fixture = statsFixture(
+    Object.assign({}, fullStats, { sinceStartRebuildsSucceeded: 8, sinceStartRebuildsUnchanged: 2 }),
+    sinceIso,
+  );
+  const unchangedStats = mini.mount(registration.Component, {});
+  await unchangedStats.settle();
+  checks.ok('成效：未追上獨立列出，且不混進成功',
+    unchangedStats.html.includes('排入 12 · 成功 8 · 失敗 3 · 未追上 2')
+    && !unchangedStats.html.includes('成功 10'));
+  unchangedStats.unmount();
 
   router.fixture = statsFixture(fullStats, undefined);
   const noSince = mini.mount(registration.Component, {});

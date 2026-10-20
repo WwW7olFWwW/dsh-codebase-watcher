@@ -58,13 +58,14 @@
 
 ## 成效統計（`stats`）
 
-`GET /state` 的 `status.stats` 是 **20 個扁平數字**，`status.statsSince` 是它的起算時間。
-十個概念各給兩個鍵：
+`GET /state` 的 `status.stats` 是 **22 個扁平數字**，`status.statsSince` 是它的起算時間。
+十一個概念各給兩個鍵：
 
 | 概念 | 說明 |
 |---|---|
 | `RebuildsQueued` | 排進佇列的次數（含人工與強制重建） |
-| `RebuildsSucceeded` | 跑完且上游回報成功（含「成功但 HEAD 沒追上」，那另有警告） |
+| `RebuildsSucceeded` | 跑完、上游回報成功，**且**圖譜 HEAD 真的追上工作樹 HEAD |
+| `RebuildsUnchanged` | 跑完、上游回報成功，但圖譜 HEAD 仍沒追上。與 `RebuildsSucceeded` 互斥；同時會設 `lastError` 並寫 `rebuild.head-mismatch` 警告 |
 | `RebuildsFailed` | 跑完但失敗，**不含**被中止與手動取消的 |
 | `RebuildsAborted` | 被中止的次數：CBM 以 `aborted_previous_preserved` 中止，或使用者手動取消。與 `RebuildsFailed` 互斥，相加才是全部未完成的嘗試（取消不算失敗） |
 | `SkippedCooldown` | 冷卻期擋下的自動重建（＝省下的重建） |
@@ -78,6 +79,17 @@
 只保留一份 `.1`，從那種檔案回填出來的「歷史」本身殘缺，標成歷史比標成啟動以來更容易誤導。
 `last24h*` 是滾動 24 小時的近似（邊界誤差最多 1 小時），行程剛啟動時它與 `sinceStart*` 相同；
 兩者都只在記憶體、不落盤。要看長期趨勢請自己定期抓 `last24h*`。
+
+## 首次載入的空窗（`scan`／`cliChecked`）
+
+路由比 keeper 的啟動掃描更早註冊，所以卡片第一次載入時可能「還沒有答案」。`GET /state` 用兩個欄位把空窗與事實分開：
+
+| 欄位 | 意義 |
+|---|---|
+| `status.scan` | `{running, reason, startedAt, finishedAt}`。`running=true` 代表掃描進行中；此時 `projects` 可能還是空的，`lastRefreshAt` 也還是 `undefined` |
+| `status.cliChecked` | CLI 至少嘗試解析過一次。`false` 只會出現在啟動後的短暫空窗，**不代表解析失敗**（失敗會有 `cliError`） |
+
+卡片據此顯示「掃描中…」「檢查中…」，而不是把空窗畫成「沒有任何專案」或紅字「（未解析）」。舊 host 沒有這兩個欄位時，前端維持原本的解讀，不會壞。
 
 ## 用 curl 讀寫設定
 

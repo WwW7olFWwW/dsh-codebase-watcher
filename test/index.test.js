@@ -293,9 +293,19 @@ test('GET /state：帶出設定頁卡片依賴的每一個欄位（換代時最�
     'queue',
     'stats',
     'statsSince',
+    'cliChecked',
+    'scan',
   ]) {
     assert.ok(Object.hasOwn(status, key) === true, 'status 缺少欄位：' + key);
   }
+
+  // 首次載入的兩種空窗：掃描中、CLI 還沒解析完。UI 靠這兩個欄位分辨
+  // 「還在讀」與「真的沒有」；少了它們就會在啟動瞬間說謊（0 專案、紅字）。
+  assert.equal(status.cliChecked, true, '第一輪掃描後 CLI 一定解析過了');
+  assert.equal(status.scan.running, false);
+  assert.equal(status.scan.reason, 'startup');
+  assert.equal(typeof status.scan.startedAt, 'string');
+  assert.equal(typeof status.scan.finishedAt, 'string');
 
   // `logFileError` / `stateLoadError` 不在此清單：它們的值是 undefined 時會被
   // `JSON.stringify` 整個丟掉，所以「正常時不在回應裡」就是它們的線上編碼。

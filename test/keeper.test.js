@@ -1567,7 +1567,7 @@ test('D4：upstreamConfigError 在建構子就有定義（尚未探測上游時�
 
 /** 介面凍結的 stats 鍵集：每個概念兩個鍵（本次啟動以來／最近 24 小時）。 */
 const STATS_FIELDS = [
-  'rebuildsQueued', 'rebuildsSucceeded', 'rebuildsFailed', 'rebuildsAborted',
+  'rebuildsQueued', 'rebuildsSucceeded', 'rebuildsUnchanged', 'rebuildsFailed', 'rebuildsAborted',
   'skippedCooldown', 'skippedGate', 'settled', 'settleDeferred',
   'checksShortCircuited', 'rebuildMs',
 ];
@@ -1723,6 +1723,106 @@ test('取消重建：計入 aborted、不計 failed、清 lastError、idle 落�
     false,
     '取消不得寫 rebuild.failed',
   );
+});
+
+test('WS7：重建回報成功但 HEAD 沒追上 → 計入 unchanged，不算 succeeded', async function (t) {
+  const root = '/srv/rebuild-unchanged';
+  const made = await makeKeeper(t, {
+    label: 'ws7-rebuild-unchanged',
+    projects: [fakeProject({ name: 'mismatch', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '96cd57b' },
+    facts: { behindBy: 37 },
+    config: { autoRebuild: false, rebuildCooldownSeconds: 0 },
+  });
+
+  await made.keeper.start();
+  assert.equal(made.keeper.list()[0].stale, true, '先確認它真的落後');
+
+  // 模擬「CLI 回報成功，卻沒有把圖譜寫成新的 HEAD」——最會讓 UI 說謊的成功。
+  made.keeper.cbm.index = async function () {
+    return { ok: true, durationMs: 5, error: undefined, command: 'fake index' };
+  };
+  assert.equal(made.keeper.enqueue(root, 'manual', undefined, { force: true }), true);
+  await waitFor(function () {
+    return made.keeper.list()[0].rebuildState === 'idle' && made.keeper.running === undefined;
+  }, { timeoutMs: 8000, label: '這一輪重建收尾' });
+
+  const stats = made.keeper.status().stats;
+  assert.equal(stats.sinceStartRebuildsUnchanged, 1, '沒追上要獨立計數');
+  assert.equal(stats.sinceStartRebuildsSucceeded, 0, '沒追上不能算成功');
+  assert.equal(stats.sinceStartRebuildsFailed, 0, '沒追上也不是失敗（子行程真的跑完了）');
+  // 假的 index 是即時返回，wall time 可能是 0ms；這裡守的是「有記一筆耗時」而不是
+  // 「一定大於 0」。用 > 0 會讓這條在快機器上隨機紅（第一次全量跑就踩到）。
+  assert.equal(Number.isFinite(stats.sinceStartRebuildMs), true, '跑完的那一輪仍要計入耗時');
+  assert.ok(stats.sinceStartRebuildMs >= 0);
+
+  const record = made.keeper.list()[0];
+  assert.match(record.lastError, /HEAD/, '卡片必須說得出沒追上的原因');
+
+  const done = made.log.entries.find(function (entry) { return entry.event === 'rebuild.done'; });
+  assert.ok(done !== undefined, '要有 rebuild.done');
+  assert.equal(done.data.caughtUp, false, 'rebuild.done 要如實標記沒追上');
+  const mismatch = made.log.entries.find(function (entry) { return entry.event === 'rebuild.head-mismatch'; });
+  assert.ok(mismatch !== undefined, '沒追上要留一筆警告');
+  assert.equal(mismatch.level, 'warn');
+  assert.equal(mismatch.data.project, 'mismatch');
+});
+
+test('WS7：掃描期間 status.scan 說 running，收尾留下 reason 與 finishedAt', async function (t) {
+  const root = '/srv/scan-status';
+  const made = await makeKeeper(t, {
+    label: 'ws7-scan-status',
+    projects: [fakeProject({ name: 'scan-status', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '3449ba2' },
+    config: { autoRebuild: false },
+  });
+
+  await made.keeper.start();
+  assert.equal(made.keeper.status().scan.running, false);
+  assert.equal(typeof made.keeper.status().scan.finishedAt, 'string', '啟動掃描收尾要留下時間');
+
+  let release;
+  const gate = new Promise(function (resolve) { release = resolve; });
+  const realList = made.keeper.cbm.listProjects.bind(made.keeper.cbm);
+  made.keeper.cbm.listProjects = async function () {
+    await gate;
+    return realList();
+  };
+
+  const pending = made.keeper.refresh('manual');
+  await waitFor(function () {
+    return made.keeper.status().scan.running === true;
+  }, { timeoutMs: 5000, label: '掃描進入 running' });
+  const during = made.keeper.status().scan;
+  assert.equal(during.reason, 'manual');
+  assert.equal(typeof during.startedAt, 'string');
+  assert.equal(during.finishedAt, undefined, '跑的時候不該假裝有完成時間');
+
+  release();
+  await pending;
+  const after = made.keeper.status().scan;
+  assert.equal(after.running, false);
+  assert.equal(after.reason, 'manual');
+  assert.equal(after.startedAt, during.startedAt, '起點不能被收尾改寫');
+  assert.equal(typeof after.finishedAt, 'string');
+});
+
+test('WS7：cliChecked 區分「還沒解析」與「解析失敗」', async function (t) {
+  const made = await makeKeeper(t, {
+    label: 'ws7-cli-checked',
+    projects: [fakeProject({ name: 'cli', rootPath: '/srv/cli-checked', graphHead: '3449ba2' })],
+    sha: { '/srv/cli-checked': '3449ba2' },
+  });
+
+  // 啟動前：沒解析過，不是解析失敗。UI 必須能分辨這兩者才不會閃紅字。
+  assert.equal(made.keeper.status().cliChecked, false);
+  assert.equal(made.keeper.status().cliPath, undefined);
+  assert.equal(made.keeper.status().scan.running, false);
+  assert.equal(made.keeper.status().scan.finishedAt, undefined);
+
+  await made.keeper.start();
+  assert.equal(made.keeper.status().cliChecked, true);
+  assert.equal(typeof made.keeper.status().cliPath, 'string', '解析完要有路徑');
 });
 
 test('WS5：冷卻擋下的重建計入 skippedCooldown，且統計不受 stop() 影響', async function (t) {

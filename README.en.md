@@ -76,9 +76,9 @@ The settings card and the REST control plane share one source, so every card act
 
 | Item | Result |
 |---|---|
-| Unit tests | `node --test test/*.test.js` → **241 tests / 241 pass / 0 fail** (the count only grows) |
+| Unit tests | `node --test test/*.test.js` → **244 tests / 244 pass / 0 fail** (the count only grows) |
 | Host half against the real CBM CLI | `node tools/verify-keeper.mjs` → **23/23** |
-| Client rendering (fed the real `/state`) | `node tools/verify-client.mjs` → **295/295** |
+| Client rendering (fed the real `/state`) | `node tools/verify-client.mjs` → **304/304** |
 
 All three are re-runnable. The unit tests need no prior index; `verify-keeper` needs the CLI on `PATH` and at least one indexed project; `verify-client` needs `dsh web` running. The end-to-end item — the graph catching up after a commit, and how long the index itself takes — is in the verification table in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
@@ -139,7 +139,7 @@ Substitute your own profile name in the first line too. The last line clears a k
 ## Development
 
 ```sh
-node --test test/*.test.js   # 241 unit tests, no real index needed
+node --test test/*.test.js   # 244 unit tests, no real index needed
 ```
 
 [Architecture](docs/ARCHITECTURE.md) ｜ [Verification status](docs/DEVELOPMENT.md) ｜ [Requirements](docs/REQUIREMENTS.md) ｜ [Publishing](docs/PUBLISHING.md) ｜ [Contributing](CONTRIBUTING.md) ｜ [Changelog](CHANGELOG.md) ｜ [Issues](https://github.com/WwW7olFWwW/dsh-codebase-watcher/issues)

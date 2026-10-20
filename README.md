@@ -76,9 +76,9 @@ codebase-memory-mcp config set auto_index false
 
 | 項目 | 結果 |
 |---|---|
-| 單元測試 | `node --test test/*.test.js` → **241 tests / 241 pass / 0 fail**（數字只增不減） |
+| 單元測試 | `node --test test/*.test.js` → **244 tests / 244 pass / 0 fail**（數字只增不減） |
 | Host 半邊對真實 CBM CLI | `node tools/verify-keeper.mjs` → **23/23** |
-| 客戶端渲染（餵真實 `/state`） | `node tools/verify-client.mjs` → **295/295** |
+| 客戶端渲染（餵真實 `/state`） | `node tools/verify-client.mjs` → **304/304** |
 
 這三條都能自己重跑。單元測試不需要先索引任何東西；`verify-keeper` 需要 CLI 在 `PATH` 與至少一個已索引專案；`verify-client` 需要 `dsh web` 在跑。端到端那條——提交後圖譜追上、索引本身耗時——記在 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 的驗證現況表。
 
@@ -139,7 +139,7 @@ rm -f ~/.dsh/profiles/web/node_modules/dsh-codebase-watcher
 ## 開發
 
 ```sh
-node --test test/*.test.js   # 241 項單元測試，不需要真的索引
+node --test test/*.test.js   # 244 項單元測試，不需要真的索引
 ```
 
 [架構](docs/ARCHITECTURE.md)｜[驗證現況](docs/DEVELOPMENT.md)｜[需求規格](docs/REQUIREMENTS.md)｜[發布清單](docs/PUBLISHING.md)｜[貢獻指南](CONTRIBUTING.md)｜[變更記錄](CHANGELOG.md)｜[問題回報](https://github.com/WwW7olFWwW/dsh-codebase-watcher/issues)
