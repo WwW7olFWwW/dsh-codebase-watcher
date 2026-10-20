@@ -101,9 +101,12 @@
 
 ## 決策與限制
 
-- **未重啟 `dsh-web`**：本 session 由該服務承載，重啟會中斷會話。後端（keeper／routes）變更以單元、
-  整合與真 HTTP 測試為證據；客戶端變更已在 live GUI 以 CDP 實測。若允許重啟，再補一次 live server
-  的 `enabled`／取消／REST 400/500 驗證。
+- **已在 2026-10-20 14:20 重啟 `dsh-web` 並做 live 驗證**：`/state` 200、3 個專案、啟動掃描
+  `stale=0`；`POST /check`／`/rebuild`／`/watchers` 的錯誤 `id` 都回 400 `code:'bad-request'`；
+  單一專案 `/check` 回 200 `ok:true`；把 `cliPath` 暫時指向失敗的假 CLI 後，單一 `/check` 回
+  502（`CLI 沒有輸出（stdout 為空）`），恢復設定後再檢查回到 `stale=false`、`lastCheckedError` 清空。
+  live GUI 實測單專案成功回饋為「已重新檢查這個專案」，沒有 `(N)` 尾碼。假 CLI 測試期間該專案
+  曾短暫顯示「無法判定」，已由恢復後的手動檢查證明可回到已同步；log 無 error 級事件。
 - 300 行以上的 `lib/client.js` 與 `lib/keeper.js` 仍是主要複雜度來源；本輪只做小步、可回退修改，
   未大規模重構。
 - 500 回應的 `error` 仍可能是內部訊息（已去 stack）；本機外掛可接受，對外部署前應改通用訊息。
