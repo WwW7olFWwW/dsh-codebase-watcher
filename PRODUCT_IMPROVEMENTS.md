@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-21（Round 1～Round 10 完成）
+> 更新：2026-10-21（Round 1～Round 11 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -136,6 +136,15 @@
 - **驗證**：verify-client `--fixture-only` 304→306（2 條）；完整模式 308/308；
   以 headless Chromium 開設定頁截圖確認實際排版（`~/scratch/ui-audit/r10-config.png`）。
 - **殘留**：說明是摘要，完整語意仍在 `docs/CONFIGURATION.md`；兩邊若分岔，文件是權威。
+
+### Round 11 — 空篩選與截斷清單多說一步
+
+- **篩選無結果**：原本只說「沒有符合這個條件的專案。」，現在多一句「改選『全部』看完整清單」，
+  把下一步直接寫在卡住的位置。
+- **「需注意」超過 3 筆**：原本只說「還有 N 個」，現在補「見下方清單」，避免使用者往上看
+  找不到東西。
+- **驗證**：verify-client `--fixture-only` 306/306（字串改動，斷言數量不變）；`docs:check` 8 項。
+- **殘留**：兩處都只有文字，沒有「一鍵清除篩選」按鈕；chips 就在上方，成本效益不足。
 
 ## 待辦（依影響排序）
 
