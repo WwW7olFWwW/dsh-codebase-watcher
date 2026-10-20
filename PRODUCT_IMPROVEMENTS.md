@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-21（Round 1～Round 11 完成）
+> 更新：2026-10-21（Round 1～Round 12 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -9,8 +9,8 @@
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
 | 單元／整合測試 | `node --test test/*.test.js` | **244 / 244 pass，0 fail**（約 55 秒） |
-| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **306 / 306**（數字穩定，CI 同指令） |
-| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **308 / 308**（4 個 live 專案時；數量隨 per-project 檢查變動） |
+| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **312 / 312**（數字穩定，CI 同指令） |
+| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **314 / 314**（4 個 live 專案時；數量隨 per-project 檢查變動） |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
 | 語法 | `npm run test:syntax` | 通過 |
@@ -137,6 +137,20 @@
   以 headless Chromium 開設定頁截圖確認實際排版（`~/scratch/ui-audit/r10-config.png`）。
 - **殘留**：說明是摘要，完整語意仍在 `docs/CONFIGURATION.md`；兩邊若分岔，文件是權威。
 
+### Round 12 — 窄卡片自己適配，不要求 host 改
+
+- **量到的事實**：390px 視窗下 DSH 設定面板 342px、左欄 212px，內容欄只剩 154px；外掛卡片
+  106px 寬，但完整卡片的內容有 257px 寬、7340px 高，橫向溢出 2.5 倍。這不是 host 壞掉，
+  是外掛沒有為窄版設計——本輪改由外掛自己適配。
+- **做法**：卡片量到 <300px 時只畫標題、摘要、`重新載入`／`完整介面`；用 ResizeObserver
+  量卡片本身，沒有觀察器時以 `innerWidth < 600` 代理。展開後最上方有「只看摘要」可收回，
+  並保留一行說明。桌面寬度照舊渲染完整卡片。
+- **390px 實測**：外掛所在容器的 `scrollWidth` 從 281 降到 154（等於 `clientWidth`），
+  水平溢出消失；摘要卡高度約 300px（`~/scratch/ui-audit/r12-mobile.png`）。
+- **驗證**：fixture 312/312（新增 6 條窄版斷言）、完整 314/314；1180px 桌面仍渲染完整卡片。
+- **殘留**：窄版摘要仍會換行；展開後的完整卡片在 106px 需橫向捲動，是刻意的取捨，
+  不再假裝 106px 能塞下 18 個設定欄位。
+
 ### Round 11 — 空篩選與截斷清單多說一步
 
 - **篩選無結果**：原本只說「沒有符合這個條件的專案。」，現在多一句「改選『全部』看完整清單」，
@@ -150,7 +164,6 @@
 
 | 優先 | 項目 | 證據／現況 | 建議 |
 | --- | --- | --- | --- |
-| P2 | 390px 設定頁不可用（跨層） | DSH settings 殼層只給 154px 內容區，plugin 卡片被壓到 106px、高 4400px；隱藏左 nav 也一樣。 | 需 DSH host 修 settings 窄版版面；plugin 端已讓「需注意」在 106px 可讀，不宣稱已修好。 |
 | P3 | 側邊欄指示只靠顏色與總數 | 11px 圓點＋數字，無文字；顏色是唯一線索。 | 寬版顯示「落後 N／失敗 N」，窄版用形狀；`aria-label` 已具備。 |
 
 ## 決策與限制
@@ -175,7 +188,7 @@
 npm test                      # 244
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
-npm run verify:client:fixture # 306，不需要 dsh web（CI 同指令）
-node tools/verify-client.mjs  # 308，完整模式需 dsh web（隨 live 專案數變動）
+npm run verify:client:fixture # 312，不需要 dsh web（CI 同指令）
+node tools/verify-client.mjs  # 314，完整模式需 dsh web（隨 live 專案數變動）
 node tools/verify-keeper.mjs  # 23，需真實 CBM 與已索引專案
 ```

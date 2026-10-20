@@ -1319,6 +1319,29 @@ async function main() {
     && !emptyNow.html.includes('掃描中…正在讀取專案清單'));
   emptyNow.unmount();
 
+  // 窄卡片：DSH 設定頁在 390px 視窗只給 154px 內容欄（卡片約 106px）。
+  // 預設只畫摘要，完整卡片按需展開——不把 7000px 高的完整卡片硬塞進去。
+  globalThis.window.innerWidth = 390;
+  router.fixture = makeFixture();
+  const narrow = mountPanel();
+  await narrow.settle();
+  checks.ok('窄版：預設顯示摘要與「完整介面」',
+    narrow.html.includes('完整介面') && narrow.html.includes('窄版摘要'));
+  checks.ok('窄版：預設不畫完整控制項',
+    !narrow.html.includes('顯示日誌') && !narrow.html.includes('健康狀態'));
+  const expand = narrow.click(byAction('panel:expand'));
+  checks.ok('窄版：點得到「完整介面」', expand.ok === true, expand.reason);
+  await narrow.settle();
+  checks.ok('窄版：展開後有完整卡片與「只看摘要」',
+    narrow.html.includes('只看摘要') && narrow.html.includes('顯示日誌'));
+  const collapse = narrow.click(byAction('panel:collapse'));
+  checks.ok('窄版：點得到「只看摘要」', collapse.ok === true, collapse.reason);
+  await narrow.settle();
+  checks.ok('窄版：收起後回到摘要',
+    narrow.html.includes('完整介面') && !narrow.html.includes('顯示日誌'));
+  narrow.unmount();
+  delete globalThis.window.innerWidth;
+
   // 掃描失敗、清單也是空的：這只代表「還不知道」，不能說成「沒有專案」。
   router.fixture = makeFixture({
     projects: [],

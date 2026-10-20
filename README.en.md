@@ -78,7 +78,7 @@ The settings card and the REST control plane share one source, so every card act
 |---|---|
 | Unit tests | `node --test test/*.test.js` → **244 tests / 244 pass / 0 fail** (the count only grows) |
 | Host half against the real CBM CLI | `node tools/verify-keeper.mjs` → **23/23** |
-| Client rendering (fixtures, no server) | `node tools/verify-client.mjs --fixture-only` → **306/306** |
+| Client rendering (fixtures, no server) | `node tools/verify-client.mjs --fixture-only` → **312/312** |
 
 All three are re-runnable. The unit tests need no prior index; `verify-keeper` needs the CLI on `PATH` and at least one indexed project; `verify-client` in `--fixture-only` mode needs no server (the same command CI runs), while the full mode without the flag also compares against a running `dsh web` and its count varies with the number of live projects. The end-to-end item — the graph catching up after a commit, and how long the index itself takes — is in the verification table in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
