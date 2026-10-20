@@ -225,6 +225,7 @@ test('runCbmTool：端到端跑假 CLI 並回傳解析後的內文', async funct
   assert.equal(ok.ok, true);
   assert.match(ok.text, /projects: 1/);
   assert.match(ok.command, /codebase-memory-mcp|fake-cbm/);
+  assert.equal(ok.aborted, false, '成功分支也要帶 aborted');
 
   // 上游回報 isError：ok=false 且錯誤文字含 stderr 尾巴。
   const failed = await runCbmTool({
@@ -234,12 +235,36 @@ test('runCbmTool：端到端跑假 CLI 並回傳解析後的內文', async funct
   });
   assert.equal(failed.ok, false);
   assert.equal(failed.timedOut, false);
+  assert.equal(failed.aborted, false);
 
   // 執行檔不存在：spawnError 走「CLI 啟動失敗」，永不 reject。
   const noBinary = await runCbmTool({ cliPath: join(dir, 'missing'), args: ['list_projects'], timeoutMs: 5000 });
   assert.equal(noBinary.ok, false);
   assert.match(noBinary.error, /CLI 啟動失敗/);
   assert.equal(noBinary.timedOut, false);
+  assert.equal(noBinary.aborted, false);
+});
+
+test('runCbmTool：AbortController 中止時回 aborted=true、error=已取消，而不是 stdout 空', async function (t) {
+  const dir = await makeTempDir(t, 'cbm-cli-abort');
+  // 忙等讓子行程活著，計時器才有機會送出 abort；否則可能一啟動就撞上 abort，
+  // 測到的會是「spawn 前就已中止」而不是真正的中止路徑。
+  const fake = await installFakeCbm(dir, { projects: [], delayMs: 3000 });
+  const controller = new AbortController();
+  const pending = runCbmTool({
+    cliPath: fake.path,
+    args: ['index_repository', '--repo-path', '/srv/abort-me', '--mode', 'full', '--name', 'abort-me'],
+    timeoutMs: 15000,
+    signal: controller.signal,
+  });
+  await new Promise(function (resolve) { setTimeout(resolve, 150); });
+  controller.abort();
+
+  const result = await pending;
+  assert.equal(result.aborted, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.error, '已取消', '中止不是「CLI 沒有輸出」');
 });
 
 test('D5：PATH 候選清單與 exec.splitPathDirs 用同一份切法', async function () {

@@ -8,7 +8,7 @@ Wiring [Codebase Memory](https://github.com/DeusData/codebase-memory-mcp) (CBM) 
 
 ## Requirements
 
-- **Codebase Memory**: the `codebase-memory-mcp` CLI, tested on 0.11.0. Other versions still work and turn into a card warning. When the CLI is not on `PATH` the card shows "（未解析）" [unresolved]; set `cliPath` on the settings page.
+- **Codebase Memory**: the `codebase-memory-mcp` CLI, tested on 0.11.0. Other versions still work and turn into a card warning. When the CLI is not on `PATH` the card shows "(unresolved)"; set `cliPath` on the settings page.
 - **Node.js ≥ 20.13** and **DSH ≥ 0.2.0-rc.2**, both declared in this plugin's `engines`. Recursive `fs.watch` on Linux only exists from Node 20.13.0 ([nodejs/node#45098](https://github.com/nodejs/node/pull/45098)); on 20.0–20.12 per-project watching fails outright, while scanning and conditional rebuilds keep working.
 - **The project must be a git worktree**: staleness comes from comparing `git rev-parse HEAD` against the graph's `Branch.head_sha`.
 
@@ -28,9 +28,9 @@ dsh plugin --profile web add https://github.com/WwW7olFWwW/dsh-codebase-watcher/
 
 `--profile web` is the profile name on this machine — **substitute your own**: `dsh plugin --profile <your profile> add …`.
 
-A "CBM 圖譜" [CBM Graph] card then appears under Settings; reload the page once if it does not.
+A "CBM Graph" card then appears under Settings; reload the page once if it does not.
 
-![Settings → "CBM 圖譜": the rebuild payoff since this start on top, then each project's graph HEAD against its worktree HEAD, stale ones first](docs/assets/cbm-card-en.png)
+![Settings → "CBM Graph": the rebuild payoff since this start on top, then each project's graph HEAD against its worktree HEAD, stale ones first](docs/assets/cbm-card-en.png)
 
 ### How to confirm it worked
 
@@ -65,22 +65,22 @@ Both are settings-page fields and take effect immediately.
 
 - **Staleness detection**: the graph's `Branch.head_sha` against `git rev-parse HEAD`, giving an exact `behindBy`. With no `Branch` node it falls back to `indexed_at` and the database mtime; when the evidence is insufficient it reports "cannot be determined".
 - **Conditional rebuild**: only stale projects are queued. When the graph already matches HEAD, `POST /rebuild` returns `queued: 0` and no indexing work happens.
-- **Visible payoff**: the card carries a payoff block showing rebuilds queued / succeeded / failed **since this process started** (failures broken out by how many were aborted), how many rebuilds the cooldown and gate skipped, and cumulative rebuild time.
-- **Sidebar indicator**: visible without opening Settings — a warn dot when projects are stale, an error dot when a rebuild or a watcher has failed; **nothing is rendered at all when everything is fresh** (quiet is the default). It is informational only, not clickable.
+- **Visible payoff**: the card carries a payoff block showing rebuilds queued / succeeded / failed **since this process started** (aborted attempts are counted separately, not as failures), how many rebuilds the cooldown and gate skipped, and cumulative rebuild time.
+- **Sidebar indicator**: visible without opening Settings — a warn dot when projects are stale, an error dot when a rebuild, a watcher or a scan has failed, or a project is no longer in the graph; **nothing is rendered at all when everything is up to date** (quiet is the default). It is informational only, not clickable.
 
 Rebuilds run as a child process, `codebase-memory-mcp cli index_repository`, which sidesteps the 60-second cap on the MCP tool. Every adopted project gets file watching with debounce, so a save is picked up on its own; without chokidar it falls back to `node:fs.watch`.
 
-The settings card and the REST control plane share one source, so every card action can also be hit with curl. The card header and each project row link into the CBM graph UI (`?project=` deep-links to a single project); when the UI is off or unreachable the link says why instead of breaking.
+The settings card and the REST control plane share one source, so every card action can also be hit with curl. The card header and each project row link into the CBM graph UI (`?project=` deep-links to a single project); when the UI is disabled or its URL is invalid no link is shown, and when it is enabled but unreachable the header keeps the link and marks it "not responding" while project rows show none.
 
 ## Measured
 
 | Item | Result |
 |---|---|
-| Unit tests | `node --test test/*.test.js` → **204 tests / 204 pass / 0 fail** (the count only grows) |
+| Unit tests | `node --test test/*.test.js` → **226 tests / 226 pass / 0 fail** (the count only grows) |
 | Host half against the real CBM CLI | `node tools/verify-keeper.mjs` → **23/23** |
-| Client rendering (fed the real `/state`) | `node tools/verify-client.mjs` → **212/212** |
+| Client rendering (fed the real `/state`) | `node tools/verify-client.mjs` → **293/293** |
 
-All three are re-runnable and need no index of their own (`verify-keeper` needs the CLI on `PATH`; `verify-client` needs `dsh web` running). The end-to-end item — the graph catching up after a commit, and how long the index itself takes — is in the verification table in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+All three are re-runnable. The unit tests need no prior index; `verify-keeper` needs the CLI on `PATH` and at least one indexed project; `verify-client` needs `dsh web` running. The end-to-end item — the graph catching up after a commit, and how long the index itself takes — is in the verification table in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ### Rebuild chasing: A/B
 
@@ -95,13 +95,13 @@ The 45-second cooldown in 0.3.0 lowered the frequency of the rebuild storm witho
 | Injected probe calls | 214 | 66 (−69%) |
 | — of which CBM CLI | 112 | 9 (−92%) |
 
-`npm run bench` re-runs it with zero external dependencies; CI runs the same command with `--assert`, so this behaviour coming back turns the build red.
+`npm run bench` re-runs it with zero external dependencies; CI runs the same tool with `--assert --settle 90`, so this behaviour coming back turns the build red.
 
 **This is a proportional model, not wall-clock seconds.** The real `CbmKeeper`, the real `node:fs.watch` and real timers are used, but the git probe, the CBM CLI and the rebuild itself are injected stand-ins — **a call count equals the number of real child processes**. Time is compressed by about 1/30 (ratios preserved, so it extrapolates), which means the catch-up seconds have to be scaled back up to get real time.
 
 ## Why not an existing option
 
-- **A sibling plugin**: `dsh-codebase-memory` has gone 39 days without an update, its Linux path resolution always fails with no setting to override it, and its bundle id collides.
+- **A sibling plugin**: `dsh-codebase-memory` has had no new commits since 2026-08-26 (checked 2026-10-20); its Linux path resolution always fails with no setting to override it, and its bundle id collides.
 - **CBM's built-in `auto_index`**: an unconditional full rebuild that burns 61 seconds at every session start; switch it off and you get no automatic updates at all. This plugin rebuilds only what is stale.
 - **Anything outside the host**: a systemd timer means touching the host; one profile per project means copying every other setting N times; starting DSH from the project directory is impossible because DSH runs under systemd with a fixed `WorkingDirectory`.
 
@@ -111,11 +111,11 @@ The full comparison is in section 7 of [`docs/REQUIREMENTS.md`](docs/REQUIREMENT
 
 | Plugin | DSH | Codebase Memory |
 |---|---|---|
-| `0.3.x` | `>=0.2.0-rc.2` (tested on 0.2.0-rc.2; declared via `engines.dsh`) | `codebase-memory-mcp@0.11.0` (versions outside the list turn into a card warning) |
+| `0.6.x` | `>=0.2.0-rc.2` (verified locally on 0.2.1-rc.2; declared via `engines.dsh`) | `codebase-memory-mcp@0.11.0` (versions outside the list turn into a card warning) |
 
 ## Configuration
 
-18 tunable fields and 7 REST routes: [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Edit the fields right on the card (Settings → "CBM 圖譜" → Show settings) and press Save changes; defaults are one click away (only the fields you changed are cleared).
+18 tunable fields and 7 REST routes: [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Edit the fields right on the card (Settings → "CBM Graph" → Show settings) and press Save changes; defaults are one click away (only the fields you changed are cleared).
 
 ![The settings block expanded: all 18 fields are editable controls (checkbox / number / select / text), each marked "(default)" while unchanged; "Save changes" and "Reset all to defaults" are both disabled when there is nothing to change](docs/assets/cbm-card-settings-en.png)
 
@@ -139,7 +139,7 @@ Substitute your own profile name in the first line too. The last line clears a k
 ## Development
 
 ```sh
-node --test test/*.test.js   # 204 unit tests, no real index needed
+node --test test/*.test.js   # 226 unit tests, no real index needed
 ```
 
 [Architecture](docs/ARCHITECTURE.md) ｜ [Verification status](docs/DEVELOPMENT.md) ｜ [Requirements](docs/REQUIREMENTS.md) ｜ [Publishing](docs/PUBLISHING.md) ｜ [Contributing](CONTRIBUTING.md) ｜ [Changelog](CHANGELOG.md) ｜ [Issues](https://github.com/WwW7olFWwW/dsh-codebase-watcher/issues)

@@ -65,22 +65,22 @@ codebase-memory-mcp config set auto_index false
 
 - **落後判定**：圖譜的 `Branch.head_sha` 對上 `git rev-parse HEAD`，給出精確的 `behindBy`；沒有 `Branch` 節點時退用 `indexed_at` 與資料庫 mtime，證據不足就回報「無法判定」。
 - **條件式重建**：只排入落後的專案；圖譜已經對上 HEAD 時，`POST /rebuild` 回 `queued: 0`，不產生任何索引工作。
-- **成效看得見**：卡片有一塊「成效」，顯示**本次啟動以來**的重建排入／成功／失敗（失敗另標其中幾次是被中止）、冷卻與閘門省下的重建次數、以及累計重建耗時。
-- **側邊欄常駐指示**：不開設定頁也看得到——有落後專案時一個 warn 圓點、有重建或監看失敗時一個 error 圓點；**全部新鮮時完全不渲染**（安靜是預設）。它是純指示，不可點擊。
+- **成效看得見**：卡片有一塊「成效」，顯示**本次啟動以來**的重建排入／成功／失敗（被中止的另計，不算失敗）、冷卻與閘門省下的重建次數、以及累計重建耗時。
+- **側邊欄常駐指示**：不開設定頁也看得到——有落後專案時一個 warn 圓點、有重建／監看／掃描失敗或專案已不在圖譜時一個 error 圓點；**全部已同步時完全不渲染**（安靜是預設）。它是純指示，不可點擊。
 
 重建是以子行程呼叫 `codebase-memory-mcp cli index_repository`，繞過 MCP 工具那個 60 秒上限。每個已納管的專案都有檔案監看與防抖，存檔後自動追上；chokidar 不在時退回 `node:fs.watch`。
 
-設定頁的卡片與 REST 控制面同源，卡片上的每個動作都能用 curl 打。卡片標題列與每個專案列各有一顆連到 CBM 圖譜 UI 的連結（`?project=` 直達單一專案）；UI 沒開或連不上時標明原因，不給點了會壞的按鈕。
+設定頁的卡片與 REST 控制面同源，卡片上的每個動作都能用 curl 打。卡片標題列與每個專案列各有一顆連到 CBM 圖譜 UI 的連結（`?project=` 直達單一專案）；UI 未啟用或網址無效時不給連結，啟用但連不上時標題列仍給連結並標明「未回應」，專案列則不給。
 
 ## 實測
 
 | 項目 | 結果 |
 |---|---|
-| 單元測試 | `node --test test/*.test.js` → **204 tests / 204 pass / 0 fail**（數字只增不減） |
+| 單元測試 | `node --test test/*.test.js` → **226 tests / 226 pass / 0 fail**（數字只增不減） |
 | Host 半邊對真實 CBM CLI | `node tools/verify-keeper.mjs` → **23/23** |
-| 客戶端渲染（餵真實 `/state`） | `node tools/verify-client.mjs` → **212/212** |
+| 客戶端渲染（餵真實 `/state`） | `node tools/verify-client.mjs` → **293/293** |
 
-這三條都能自己重跑，不需要先索引任何東西（`verify-keeper` 需要 CLI 在 `PATH`，`verify-client` 需要 `dsh web` 在跑）。端到端那條——提交後圖譜追上、索引本身耗時——記在 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 的驗證現況表。
+這三條都能自己重跑。單元測試不需要先索引任何東西；`verify-keeper` 需要 CLI 在 `PATH` 與至少一個已索引專案；`verify-client` 需要 `dsh web` 在跑。端到端那條——提交後圖譜追上、索引本身耗時——記在 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 的驗證現況表。
 
 ### 重建追逐：A/B 對照
 
@@ -95,13 +95,13 @@ codebase-memory-mcp config set auto_index false
 | 注入探針呼叫 | 214 | 66（−69%） |
 | 　其中 CBM CLI | 112 | 9（−92%） |
 
-`npm run bench` 可重跑，零外部相依；CI 跑同一條指令並帶 `--assert`，所以這種行為回來會直接紅燈。
+`npm run bench` 可重跑，零外部相依；CI 跑同一支工具並帶 `--assert --settle 90`，所以這種行為回來會直接紅燈。
 
 **這是比例模型，不是實機秒數。** 真的 `CbmKeeper`、真的 `node:fs.watch`、真的計時器，但 git 探針／CBM CLI／重建本身是注入替身——**呼叫次數就等於真實的子行程次數**。時間參數等比壓縮約 1/30（比例不變，可以外推），所以「追上」的秒數要乘回去才是真實時間。
 
 ## 為什麼不直接用現成的
 
-- **同類插件**：`dsh-codebase-memory` 已經 39 天沒有更新，Linux 路徑解析必然失敗又沒有設定可以覆寫，bundle id 還會撞名。
+- **同類插件**：`dsh-codebase-memory` 自 2026-08-26 起沒有新提交（2026-10-20 查核），Linux 路徑解析必然失敗又沒有設定可以覆寫，bundle id 還會撞名。
 - **CBM 內建的 `auto_index`**：無條件全量重建，每個 session 白燒 61 秒；關掉它則完全沒有自動更新。本插件是「只在落後時重建」。
 - **宿主外部方案**：systemd timer 要動宿主；一專案一 profile 要把其餘設定複製 N 份；從專案目錄啟動 DSH 不可能——DSH 由 systemd 常駐，`WorkingDirectory` 固定。
 
@@ -111,7 +111,7 @@ codebase-memory-mcp config set auto_index false
 
 | 插件 | DSH | Codebase Memory |
 |---|---|---|
-| `0.3.x` | `>=0.2.0-rc.2`（實測 0.2.0-rc.2；由 `engines.dsh` 宣告） | `codebase-memory-mcp@0.11.0`（清單外版本在卡片上轉為警告） |
+| `0.6.x` | `>=0.2.0-rc.2`（本機實測 0.2.1-rc.2；由 `engines.dsh` 宣告） | `codebase-memory-mcp@0.11.0`（清單外版本在卡片上轉為警告） |
 
 ## 設定
 
@@ -139,7 +139,7 @@ rm -f ~/.dsh/profiles/web/node_modules/dsh-codebase-watcher
 ## 開發
 
 ```sh
-node --test test/*.test.js   # 204 項單元測試，不需要真的索引
+node --test test/*.test.js   # 226 項單元測試，不需要真的索引
 ```
 
 [架構](docs/ARCHITECTURE.md)｜[驗證現況](docs/DEVELOPMENT.md)｜[需求規格](docs/REQUIREMENTS.md)｜[發布清單](docs/PUBLISHING.md)｜[貢獻指南](CONTRIBUTING.md)｜[變更記錄](CHANGELOG.md)｜[問題回報](https://github.com/WwW7olFWwW/dsh-codebase-watcher/issues)

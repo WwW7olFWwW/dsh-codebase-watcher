@@ -68,7 +68,7 @@ async function mount(t, options) {
   }
 
   const config = Object.assign({
-    enabled: false,
+    enabled: true,
     cliPath: fake.path,
     mode: 'full',
     scanMinutes: 1440,
@@ -247,6 +247,24 @@ test('index.js：生命週期真的跑起來，且日誌依序留下 plugin.star
   );
 });
 
+test('index.js：enabled=false 只停自動化——不掃描、不憑空產生專案，但 status 仍可讀', async function (t) {
+  const mounted = await mount(t, { config: { enabled: false } });
+  // 留一段時間：舊行為（無條件 refresh('startup')）若回來，這裡就會看到掃描完成。
+  await new Promise(function (resolve) { setTimeout(resolve, 300); });
+
+  const payload = (await mounted.call('/state')).json();
+  assert.equal(payload.status.enabled, false);
+  assert.equal(payload.status.lastRefreshAt, undefined, 'enabled=false 不得做啟動掃描');
+  assert.deepEqual(payload.projects, [], '沒有掃描就不該有專案');
+  assert.equal(payload.status.queue.length, 0);
+
+  const log = await readLog(mounted.logPath);
+  assert.match(log, /msg=plugin\.start/, '啟動本身仍要留痕');
+  assert.doesNotMatch(log, /msg=scan\.done/, 'enabled=false 不得留下掃描完成');
+
+  await mounted.dispose();
+});
+
 test('index.js：未宣告的設定鍵會在啟動時具名警告', async function (t) {
   const mounted = await mount(t, { config: { scanMs: 5 } });
   await waitForFirstScan(mounted);
@@ -285,7 +303,7 @@ test('GET /state：帶出設定頁卡片依賴的每一個欄位（換代時最�
   assert.ok(!('logFileError' in status) || typeof status.logFileError === 'string');
   assert.ok(!('stateLoadError' in status) || typeof status.stateLoadError === 'string');
 
-  assert.equal(status.enabled, false, 'enabled 必須如實反映設定');
+  assert.equal(status.enabled, true, 'enabled 必須如實反映設定');
   assert.equal(typeof status.statsSince, 'string', 'statsSince 應是 ISO 字串');
   assert.equal(status.stats.constructor, Object, 'stats 應是扁平物件');
 
@@ -439,11 +457,10 @@ test('POST /config：沒有 settings 服務時拒絕寫入，並說出原因', a
     body: JSON.stringify({ scanMinutes: 10 }),
   });
 
-  // routes.js 另有一條「deps.updateConfig 不是函式 → 503」的分支，但 index.js
-  // 一定會把 updateConfig 傳進去，所以線上走的是「它拋錯 → wrap() 收成 400」。
-  // 兩條路的訊息相同、都不假裝成功；這裡固定實際行為，避免日後有人照著
-  // routes.js 的 503 去寫客戶端。
-  assert.equal(response.status, 400);
+  // routes.js 的契約：只有使用者輸入錯誤是 400；缺少 settings 服務是伺服器端的
+  // 設定問題，updateConfig 拋錯會被 wrap() 收成 500（不是「你打錯請求」）。
+  // 兩條路都不假裝成功，訊息也要指出是 settings。
+  assert.equal(response.status, 500);
   assert.match(response.json().error, /settings/);
 
   await mounted.dispose();
@@ -554,8 +571,8 @@ test('WS12：reset 與賦值同時出現時，所有 unset 都排在 set 之前'
 });
 
 test('WS12：GET /config 在真插件入口上就帶 defaults 與 overridden', async function (t) {
-  const mounted = await mount(t);
-  await waitForFirstScan(mounted);
+  // 這一條不需要掃描；刻意用 enabled=false 驗「與預設 true 不同的欄位要列進 overridden」。
+  const mounted = await mount(t, { config: { enabled: false } });
 
   const payload = (await mounted.call('/config')).json();
   assert.deepEqual(payload.defaults, defaultConfigValues(), 'defaults 就是可寫形狀的預設值');

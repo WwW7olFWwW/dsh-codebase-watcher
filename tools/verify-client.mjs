@@ -1118,6 +1118,12 @@ async function main() {
   const enHarness = mini.mount(enRegistration.Component, {});
   await enHarness.settle();
   checks.ok('英文介面渲染成功', enHarness.html.includes('Codebase Memory graph freshness'));
+  checks.ok('警告標題用可讀文字＋tone 圓點', enHarness.nodes.some(function (node) {
+    if (node.tag !== 'div' || nodeText(node) !== 'Warnings') return false;
+    const dot = node.props.children?.[0];
+    return node.props.style?.color === 'var(--dsw-alias-label-primary)'
+      && dot?.props?.style?.background === 'var(--dsw-alias-state-warn-label)';
+  }));
   const enBody = enHarness.html.replace(/<[^>]*>/g, ' ');
   checks.ok('英文介面沒有中文外洩', !cjk.test(enBody),
     (enBody.match(new RegExp(cjk.source, 'g')) ?? []).slice(0, 8).join(''));
@@ -1223,7 +1229,7 @@ async function main() {
   const orphaned = mountPanel();
   await orphaned.settle();
   checks.ok('orphaned：出現「已不在圖譜」徽章', orphaned.html.includes('已不在圖譜'));
-  checks.ok('orphaned：附上救援說明', orphaned.html.includes('重新索引，或把它移出納管清單'));
+  checks.ok('orphaned：附上救援說明', orphaned.html.includes('請重新索引') && orphaned.html.includes('重啟 dsh web'));
   checks.ok('orphaned：摘要列計數', orphaned.html.includes('1 已不在圖譜'));
   const order = projectOrder(orphaned);
   checks.ok('排序：落後 → 已同步 → 孤兒（孤兒永遠最後）',
@@ -1297,6 +1303,19 @@ async function main() {
   }));
   idle.unmount();
 
+  // 沒有落後專案時，「重建所有落後」不該看起來可按（按了只會得到 0 筆排入）。
+  router.fixture = makeFixture({ projects: [makeProject({})] });
+  router.reset();
+  const noStale = mountPanel();
+  await noStale.settle();
+  const rebuildStale = noStale.nodes.filter(function (node) {
+    return node.props['data-dsw-action'] === 'panel:rebuildStale';
+  })[0];
+  checks.ok('沒有落後時「重建所有落後」停用', rebuildStale?.props?.disabled === true);
+  checks.ok('停用的「重建所有落後」說明原因', rebuildStale?.props?.title === '目前沒有落後的專案，不需要重建。');
+  checks.ok('沒有需注意專案時不渲染首屏摘要', !noStale.html.includes('data-dsw-attention'));
+  noStale.unmount();
+
   // ------------------------------------------------ 互動：點擊
   router.mode = 'fixture';
   router.hold = false;
@@ -1304,6 +1323,52 @@ async function main() {
   router.reset();
   const interactive = mountPanel();
   await interactive.settle();
+
+  // 首屏摘要：只收需要人處理的專案，並把原因直接寫出來。
+  const attentionRow = interactive.nodes.filter(function (node) {
+    return node.props['data-dsw-attention-project'] !== undefined;
+  });
+  checks.ok('首屏需注意：只列落後專案', attentionRow.length === 1
+    && attentionRow[0].props['data-dsw-attention-project'] === '/tmp/demo/stale');
+  checks.ok('首屏需注意：直接顯示落後原因', nodeText(attentionRow[0]).includes('圖譜落後工作樹'));
+  checks.ok('首屏需注意：無法判定不混進摘要', !interactive.nodes.some(function (node) {
+    return node.props['data-dsw-attention-project'] === '/tmp/demo/unknown';
+  }));
+  checks.ok('首屏需注意：檢查鈕的可讀名稱帶專案名', interactive.nodes.some(function (node) {
+    return node.props['data-dsw-action'] === 'attention:check'
+      && node.props['aria-label'] === '立即檢查: demo-stale';
+  }));
+  checks.ok('首屏需注意：停在 stats／CLI 之前', interactive.html.indexOf('data-dsw-attention')
+    < interactive.html.indexOf('CLI 與上游'));
+
+  const reasonRows = interactive.nodes.filter(function (node) {
+    return node.props['data-dsw-project-reason'] !== undefined;
+  });
+  checks.ok('卡片收合時就看得到落後與無法判定的原因', reasonRows.length === 2
+    && reasonRows.some(function (row) { return nodeText(row).includes('圖譜落後工作樹'); }));
+  checks.ok('專案動作鈕的可讀名稱帶專案名', interactive.nodes.some(function (node) {
+    return node.props['data-dsw-action'] === 'project:check'
+      && node.props['aria-label'] === '立即檢查: demo-stale';
+  }));
+  checks.ok('詳細 summary 的可讀名稱帶專案名', interactive.nodes.some(function (node) {
+    return node.tag === 'summary' && node.props['aria-label'] === '詳細: demo-stale';
+  }));
+  checks.ok('亮色狀態徽章改用 label-primary 文字＋tone 圓點', (function () {
+    const badge = interactive.nodes.filter(function (node) {
+      return node.tag === 'span' && node.props?.style?.borderRadius === '999px'
+        && nodeText(node) === '已同步';
+    })[0];
+    if (badge === undefined) return false;
+    const dot = badge.props.children?.[0];
+    return badge.props.style.color === 'var(--dsw-alias-label-primary)'
+      && dot?.props?.style?.background === 'var(--dsw-alias-state-success-primary)';
+  })());
+  checks.ok('11-12px 次要文字改用 label-secondary', (function () {
+    const label = interactive.nodes.filter(function (node) {
+      return node.tag === 'span' && nodeText(node) === '上次重建';
+    })[0];
+    return label?.props?.style?.color === 'var(--dsw-alias-label-secondary)';
+  })());
 
   const initialGets = router.stateCalls();
   checks.ok('首次載入只抓一次狀態', initialGets.length >= 1 && initialGets.length <= 2, String(initialGets.length));
@@ -1350,6 +1415,33 @@ async function main() {
   await interactive.settle();
   checks.ok('第一次點擊只上膛、不送 POST', router.postCalls('/rebuild').length === postsBefore);
   checks.ok('上膛後顯示確認問句', interactive.html.includes('圖譜與工作樹一致，仍要強制重建？'));
+  const armedGroup = interactive.nodes.filter(function (node) {
+    return node.props.role === 'group' && node.props['aria-live'] === 'assertive';
+  })[0];
+  checks.ok('兩段式確認是 aria-live 的 group', armedGroup !== undefined
+    && armedGroup.props['aria-label'] === '圖譜與工作樹一致，仍要強制重建？');
+  checks.ok('上膛後焦點自動到「確定」', interactive.nodes.some(function (node) {
+    return node.props['data-dsw-action'] === 'project:rebuild:confirm'
+      && node.props.autoFocus === true;
+  }));
+  const escape = armedGroup === undefined ? { ok: false } : interactive.fire(function (node) {
+    return node === armedGroup;
+  }, 'onKeyDown', {
+    key: 'Escape',
+    preventDefault: function () {},
+    stopPropagation: function () {},
+  });
+  checks.ok('Escape 可以取消確認', escape.ok === true, escape.reason);
+  await interactive.settle();
+  checks.ok('Escape 取消後不送 POST', router.postCalls('/rebuild').length === postsBefore);
+  checks.ok('Escape 取消後焦點回到觸發鈕', interactive.nodes.some(function (node) {
+    return node.props['data-dsw-action'] === 'project:rebuild'
+      && node.props['data-dsw-project'] === '/tmp/demo/fresh'
+      && node.props.autoFocus === true;
+  }));
+  const reArm = interactive.click(byAction('project:rebuild', '/tmp/demo/fresh'));
+  checks.ok('取消後可以再次上膛', reArm.ok === true, reArm.reason);
+  await interactive.settle();
   const clickConfirm = interactive.click(byAction('project:rebuild:confirm', '/tmp/demo/fresh'));
   checks.ok('點得到「確定」', clickConfirm.ok === true, clickConfirm.reason + ' @ ' + actionList(interactive));
   await interactive.settle();
@@ -1773,7 +1865,7 @@ async function main() {
   checks.ok('成效：英文介面逐值呈現',
     enStats.html.includes('queued 12 · succeeded 9 · failed 3')
     && enStats.html.includes('(2 aborted mid-rebuild)')
-    && enStats.html.includes('cooldown 27 · gate 41 · settle deferred 5'));
+    && enStats.html.includes('cooldown skips 27 · gate skips 41 · settle deferrals 5'));
   enStats.unmount();
   router.mode = 'fixture';
 
@@ -1906,6 +1998,12 @@ async function main() {
   await editField(withEdit, 'enabled', false);
   checks.ok('設定：第二個欄位也進暫存（未儲存 2 項）', withEdit.html.includes('未儲存 2 項'));
   checks.ok('設定：勾選框的暫存值顯示為 false', inputValue(withEdit, 'enabled') === false);
+  withEdit.click(byAction('panel:config'));
+  await withEdit.settle();
+  checks.ok('設定：收起後仍看得到「未儲存」徽章', unsavedBadges(withEdit) === 1
+    && withEdit.html.includes('未儲存 2 項'));
+  checks.ok('設定：收起後不再渲染輸入欄位', inputNode(withEdit, 'enabled') === undefined);
+  await openConfig(withEdit);
 
   const clickSave = withEdit.click(byAction('config:save'));
   checks.ok('設定：點得到「儲存變更」', clickSave.ok === true, clickSave.reason);
@@ -1955,6 +2053,12 @@ async function main() {
   await editField(withEdit, 'nice', '');
   checks.ok('設定：數字欄位留空就地提示', withEdit.html.includes('請填數字'));
   checks.ok('設定：無效輸入標 aria-invalid', inputNode(withEdit, 'nice')?.props?.['aria-invalid'] === true);
+  const invalidInput = inputNode(withEdit, 'nice');
+  const describedBy = invalidInput?.props?.['aria-describedby'];
+  checks.ok('設定：錯誤訊息以 aria-describedby 關聯', typeof describedBy === 'string'
+    && withEdit.nodes.some(function (node) {
+      return node.props.id === describedBy && nodeText(node) === '請填數字';
+    }));
   const postsBeforeInvalid = router.postCalls('/config').length;
   withEdit.click(byAction('config:save'));
   await withEdit.settle();

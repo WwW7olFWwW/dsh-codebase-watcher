@@ -3,7 +3,7 @@
 ## 跑起來
 
 ```bash
-node --test test/*.test.js             # 單元測試（204 項，不需要真的索引）
+node --test test/*.test.js             # 單元測試（226 項，不需要真的索引）
 node tools/verify-keeper.mjs           # 對真實 CBM CLI 掃描（唯讀，需要 CLI 在 PATH）
 node tools/verify-client.mjs           # 客戶端渲染驗證（需要 dsh web 在跑）
 ```
@@ -29,18 +29,18 @@ systemctl --user restart dsh-web
 
 ## 驗證現況
 
-下表是在一台已安裝並在跑的 DSH 上、用同一組指令量到的；換一台機器重跑即可複現。
+下表是在一台已安裝並在跑的 DSH 上量到的。指令類項目（測試、驗證器）可直接重跑；端到端秒數與掃描結果會隨機器、索引內容與當下狀態變動，不是固定值。
 
 | 項目 | 證據 |
 |---|---|
-| 單元測試（NFR-7） | `node --test test/*.test.js` → **204 tests / 204 pass / 0 fail / 0 todo**（2026-10-07 實測；Node 20／22／24 皆同） |
-| Host 半邊對真實 CLI | `node tools/verify-keeper.mjs` → **23/23**（唯讀掃描 + 孤兒收斂 + 未納管不得重建 + 圖譜 UI 連結） |
-| 圖譜 UI 連結 | 同一支驗證器的最後四項：連結指向 `127.0.0.1:<ui_port>/?tab=graph`、探測結果是布林、每個已納管專案都有 `?project=` 深連結（對 `127.0.0.1:9749` 實測） |
-| 客戶端渲染 | `node tools/verify-client.mjs` → **212/212**（2026-10-07 實測；用執行中伺服器的真實回應逐值比對，另含輪詢節流與退避的假時鐘測試、以及英文介面的零 CJK 斷言） |
+| 單元測試（NFR-7） | `node --test test/*.test.js` → **226 tests / 226 pass / 0 fail / 0 todo**（2026-10-20 於 Node 24.18 重跑；CI 另跑 Node 20／22／24 × chokidar 有／無） |
+| Host 半邊對真實 CLI | `node tools/verify-keeper.mjs` → **23/23**（唯讀掃描 + 「已不在圖譜」收斂 + 未納管不得重建 + 圖譜 UI 連結） |
+| 圖譜 UI 連結 | 同一支驗證器的四項檢查：狀態可讀、連結指向 `127.0.0.1:<ui_port>/?tab=graph`、探測結果是布林、每個已納管專案都有 `?project=` 深連結（對 `127.0.0.1:9749` 實測） |
+| 客戶端渲染 | `node tools/verify-client.mjs` → **293/293**（2026-10-20 重跑；用執行中伺服器的真實回應逐值比對，另含輪詢節流與退避的假時鐘測試、以及英文介面的零 CJK 斷言） |
 | CLI 解析（FR-5） | `cliPath=~/.local/bin/codebase-memory-mcp`, `source=PATH`, `cliVersion=0.11.0`, `supported=true` |
 | 自動納管（FR-7/US-4） | 拋棄式倉庫索引後，下一次 `POST /check` 即被納管並建立監看 |
 | 落後偵測（FR-2） | 樣本倉庫：`graphHead=liveHead`, `stale=false`, `behindBy=0`, `confidence=head` |
-| 條件式重建（FR-3） | 全部新鮮時 `POST /rebuild` 回 `queued: 0, skipped: 3`；`staleOnly` 回 `沒有落後的專案` |
+| 條件式重建（FR-3） | 全部已同步時 `POST /rebuild` 回 `queued: 0, skipped: 3`；`staleOnly` 回 `沒有落後的專案` |
 | 端到端追上（US-1） | 對樣本倉庫提交後 **18.5 秒**圖譜追上（`watch.triggered` → `rebuild.done caughtUp=true`，索引本身 4.42 s） |
 | 觀測面（FR-8/9/10） | 卡片逐值呈現 CLI 路徑／版本／兩個 HEAD／落後量／watcher／警告；無提交的倉庫顯示「無法判定」 |
 | 失敗可見（FR-10） | 該倉庫的 `lastCheckedError` 是「這個專案尚無提交（unborn HEAD）…」＋ git 原始訊息 |
@@ -50,9 +50,9 @@ systemctl --user restart dsh-web
 | 設定可配置（障礙排除） | 官方探針 `Config.listConfigs` 對 entry `codebase-watcher` 由 `status: absent` 變 **`status: schema`**；`POST /api/codebase-watcher/config` 回 `{"ok":true}`，寫入後 `cliSource` 由 `config` 回到 `PATH` |
 | 卸載演練（NFR-8 的動態面） | 重建進行中（慢速 CLI 包裝，子行程 `sleep 900`）停用 bundle：日誌依序 `rebuild.abandoned`（`durationMs=6880 ok=false`）→ `keeper.stopped` → `plugin.stop`，子行程消失；`rm -rf ~/.dsh/codebase-watcher` 後 12 秒目錄未回來（沒有遲到的落盤） |
 
-驗證是在一台**已經安裝並正在跑的** DSH 上進行的（預設 `http://127.0.0.1:3080`）。表中的每一項都能
-用同一組指令重跑複現；與主機無關的部分（例如 `profilePackageRoots()` 的解析順序）在單元測試裡也
-有對應案例。**改動 `lib/` 之後仍必須重啟 `dsh web` 才會換代**：ESM 模組快取仍供應舊的模組
+驗證是在一台**已經安裝並正在跑的** DSH 上進行的（預設 `http://127.0.0.1:3080`）。表中的指令類項目
+都能用同一組指令重跑；端到端秒數與掃描結果會隨機器、索引內容與當下狀態變動，不是固定值。與主機
+無關的部分（例如 `profilePackageRoots()` 的解析順序）在單元測試裡也有對應案例。**改動 `lib/` 之後仍必須重啟 `dsh web` 才會換代**：ESM 模組快取仍供應舊的模組
 世代，重新 apply 只會重跑舊程式碼。
 
 ## 怎麼重跑 dirty 追逐的量測

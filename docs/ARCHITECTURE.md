@@ -41,7 +41,7 @@ CbmKeeper 協調器（lib/keeper.js）
 |---|---|
 | `head` | 主判據：圖譜 `Branch.head_sha` 對上 `git rev-parse HEAD`。`behindBy` 是精確提交數。 |
 | `time` | 退路（R2）：圖譜沒有 `Branch` 節點時，改用 `indexed_at`／DB mtime 與 HEAD 提交時間比較。`behindBy` 為 `null`。 |
-| `none` | 證據不足（例如專案尚無提交、或不是 git 工作樹）。**`stale` 為 `null`，UI 顯示「無法判定」，絕不會被當成「新鮮」。** |
+| `none` | 證據不足（例如專案尚無提交、或不是 git 工作樹）。**`stale` 為 `null`，UI 顯示「無法判定」，絕不會被當成「已同步」。** |
 
 `index_status` 回報的 `git.head_sha` 是**查詢時即時讀取**的（P6），圖譜沒動也照樣顯示新 HEAD。
 本插件不採用它作為新鮮度判據，卡片上也不會出現「看起來是新的」的欄位。

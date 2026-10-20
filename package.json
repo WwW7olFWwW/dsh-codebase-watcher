@@ -44,7 +44,8 @@
     "test:syntax": "for f in lib/*.js test/*.js test/helpers/*.js tools/*.mjs docs/assets/*.mjs; do node --check \"$f\" || exit 1; done",
     "verify:keeper": "node tools/verify-keeper.mjs",
     "verify:client": "node tools/verify-client.mjs",
-    "bench": "node tools/bench-dirty-chase.mjs"
+    "bench": "node tools/bench-dirty-chase.mjs",
+    "docs:check": "node tools/check-docs.mjs"
   },
   "keywords": [
     "dsh",

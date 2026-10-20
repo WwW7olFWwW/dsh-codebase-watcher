@@ -47,7 +47,7 @@ async function mountOverHttp(t, options) {
   });
 
   const config = Object.assign({
-    enabled: false,
+    enabled: true,
     cliPath: fake.path,
     mode: 'full',
     scanMinutes: 1440,
@@ -166,7 +166,7 @@ test('真 HTTP：GET /state 回 200、application/json，且欄位與假替身�
 
   assert.equal(response.status, 200);
   assert.match(response.type, /application\/json/);
-  assert.equal(response.json.status.enabled, false);
+  assert.equal(response.json.status.enabled, true);
   assert.equal(typeof response.json.status.stats, 'object');
   assert.equal(typeof response.json.status.statsSince, 'string');
   assert.ok(Array.isArray(response.json.projects) && response.json.projects.length >= 1);
@@ -246,6 +246,48 @@ test('真 HTTP：不存在的專案 id 回 404，且是真的 HTTP 狀態碼', a
     body: JSON.stringify({ id: key }),
   });
   assert.notEqual(existing.status, 404, '存在的專案不該回 404');
+
+  await mounted.dispose();
+});
+
+test('真 HTTP：id 型別錯誤與空字串回 400，未帶 id 才代表全部', async function (t) {
+  const mounted = await mountOverHttp(t);
+  await waitForFirstScan(mounted.base);
+
+  const numberId = await call(mounted.base, '/check', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 123 }),
+  });
+  assert.equal(numberId.status, 400);
+  assert.equal(numberId.json.code, 'bad-request');
+  assert.equal(numberId.json.route, 'check');
+
+  const emptyId = await call(mounted.base, '/rebuild', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: '', force: true }),
+  });
+  assert.equal(emptyId.status, 400);
+  assert.equal(emptyId.json.code, 'bad-request');
+  assert.equal(emptyId.json.route, 'rebuild');
+
+  // 未帶 id 仍是「全部」，不能被型別驗證誤殺。
+  const noId = await call(mounted.base, '/watchers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'pause' }),
+  });
+  assert.equal(noId.status, 200);
+
+  const malformed = await call(mounted.base, '/check', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"id":',
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal(malformed.json.code, 'bad-request');
+  assert.equal(malformed.json.route, 'check');
 
   await mounted.dispose();
 });

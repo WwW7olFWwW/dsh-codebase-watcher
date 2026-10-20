@@ -65,8 +65,8 @@
 |---|---|
 | `RebuildsQueued` | 排進佇列的次數（含人工與強制重建） |
 | `RebuildsSucceeded` | 跑完且上游回報成功（含「成功但 HEAD 沒追上」，那另有警告） |
-| `RebuildsFailed` | 跑完但失敗，**不含**被中止的 |
-| `RebuildsAborted` | 錯誤命中 `aborted_previous_preserved`：「重建途中檔案又變」的直接指標。與 `RebuildsFailed` 互斥，相加才是全部失敗嘗試 |
+| `RebuildsFailed` | 跑完但失敗，**不含**被中止與手動取消的 |
+| `RebuildsAborted` | 被中止的次數：CBM 以 `aborted_previous_preserved` 中止，或使用者手動取消。與 `RebuildsFailed` 互斥，相加才是全部未完成的嘗試（取消不算失敗） |
 | `SkippedCooldown` | 冷卻期擋下的自動重建（＝省下的重建） |
 | `SkippedGate` | 掃描閘門擋下的次數（沒有活動／尚未靜默），每輪掃描各計一次 |
 | `Settled` | 走完 settle 視窗、最後真的排入的重建 |
@@ -95,7 +95,7 @@ CBM 自帶一個 HTTP 圖譜介面（`codebase-memory-mcp --ui=true`，預設埠
 | 狀態 | 卡片顯示 | 連結 |
 |---|---|---|
 | CBM 的 `ui_enabled=false` | 「CBM 圖譜 UI 未啟用：執行 codebase-memory-mcp --ui=true」 | 不給 |
-| 啟用但 `GET /api/ui-config` 沒回應 | 「圖譜 UI 未回應」 | 給（但標明未回應） |
+| 啟用但 `GET /api/ui-config` 沒回應 | 「圖譜 UI 未回應」 | 標題列給（並標明未回應）；專案列不給 |
 | 啟用且可連 | 標題列的「開啟圖譜」與每個專案列的「圖譜」 | 給 |
 
 專案列的連結是深連結（`?project=<name>&tab=graph`），會直接開到該專案的圖。本插件不會代改 CBM 的 `ui_enabled`，那個開關屬於上游設定。

@@ -411,6 +411,8 @@ test('NFR-6：狀態檔中 rebuildState=running 的專案在 start() 時重新�
   const made = await makeKeeper(t, {
     projects: [fakeProject({ name: 'recovered', rootPath: root, graphHead: '3449ba2' })],
     sha: { [root]: '96cd57b' },
+    // 崩潰恢復是自動流程：總開關關著時不該跑（新契約），這裡明確打開。
+    config: { enabled: true },
   });
 
   // 模擬上次崩潰：狀態檔說這個專案正在重建，但沒有任何行程在做。
@@ -1325,6 +1327,55 @@ test('WS5：成功、失敗、被中止各計一次，且失敗與被中止互�
   assert.equal(stats.last24hRebuildsAborted, 1, '剛發生的事一定要落在 24 小時視窗內');
 });
 
+test('取消重建：計入 aborted、不計 failed、清 lastError、idle 落盤且不留 rebuild.failed', async function (t) {
+  const root = '/srv/cancel-semantics';
+  const made = await makeKeeper(t, {
+    label: 'cancel-semantics',
+    projects: [fakeProject({ name: 'cancel-me', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '96cd57b' },
+    facts: { behindBy: 1 },
+    // 假 CLI 忙等 3 秒：cancelRunning() 才有真正在跑的子行程可中止。
+    cbm: { delayMs: 3000 },
+    // 關掉自動重建：這一條要自己控制排入與取消。
+    config: { autoRebuild: false, rebuildCooldownSeconds: 0 },
+  });
+
+  await made.keeper.start();
+  assert.equal(made.keeper.enqueue(root, 'manual', undefined, { force: true }), true);
+  await waitFor(function () {
+    return made.keeper.running !== undefined;
+  }, { timeoutMs: 8000, label: '重建真的開始跑' });
+  assert.equal(made.keeper.cancelRunning(), true);
+
+  await waitFor(function () {
+    return made.keeper.list()[0].rebuildState === 'idle' && made.keeper.running === undefined;
+  }, { timeoutMs: 8000, label: '取消後收尾並落盤' });
+
+  const stats = made.keeper.status().stats;
+  assert.equal(stats.sinceStartRebuildsAborted, 1, '取消要計入 aborted');
+  assert.equal(stats.sinceStartRebuildsFailed, 0, '取消不是失敗');
+  assert.equal(stats.sinceStartRebuildsSucceeded, 0);
+
+  const record = made.keeper.list()[0];
+  assert.equal(record.rebuildState, 'idle');
+  assert.equal(record.lastError, undefined, '取消不該留下「CLI 沒有輸出」');
+
+  // 落盤後的重啟語意：狀態是 idle、沒有錯誤，recoverIntent 不會重排。
+  const persisted = JSON.parse(await readFile(join(made.home, 'state.json'), 'utf8'));
+  assert.equal(persisted.projects[root].rebuildState, 'idle');
+  assert.equal(persisted.projects[root].lastError, undefined);
+
+  const cancelled = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.cancelled'; });
+  assert.equal(cancelled.length, 1, '取消要有自己的日誌事件');
+  assert.equal(cancelled[0].level, 'info');
+  assert.equal(cancelled[0].data.project, 'cancel-me');
+  assert.equal(
+    made.log.entries.some(function (entry) { return entry.event === 'rebuild.failed'; }),
+    false,
+    '取消不得寫 rebuild.failed',
+  );
+});
+
 test('WS5：冷卻擋下的重建計入 skippedCooldown，且統計不受 stop() 影響', async function (t) {
   const root = '/srv/stats-skipped';
   const made = await makeKeeper(t, {
@@ -1817,4 +1868,216 @@ test('WS7：data 與 message 說同一件事，且百分比是四捨五入（6/7
   // fallback 文案與結構化參數必須一致，否則在地化後的卡片會和中文卡片說不同的事。
   assert.match(warning.message, /6 次重建在途中被中止/);
   assert.match(warning.message, /7 次已完成嘗試的 86%/);
+});
+
+/**
+ * 把 cbm.index 包成計數器；其餘行為不變。
+ * @param {object} keeper - 受測 keeper。
+ * @returns {{calls: number}} 計數物件（calls 會隨呼叫增加）。
+ */
+function countIndexCalls(keeper) {
+  const counter = { calls: 0 };
+  const realIndex = keeper.cbm.index.bind(keeper.cbm);
+  keeper.cbm.index = async function (request) {
+    counter.calls += 1;
+    return realIndex(request);
+  };
+  return counter;
+}
+
+test('總開關：enabled=false 時 start() 不掃描、不排重建；開啟後掃描才恢復自動化', async function (t) {
+  const root = '/srv/disabled-start';
+  const made = await makeKeeper(t, {
+    label: 'disabled-start',
+    projects: [fakeProject({ name: 'disabled', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '96cd57b' },
+    facts: { behindBy: 1 },
+    config: { enabled: false, autoRebuild: true, rebuildCooldownSeconds: 0 },
+  });
+  const indexCalls = countIndexCalls(made.keeper);
+
+  await made.keeper.start();
+  // 舊碼會在這裡跑 startup 掃描並把落後專案排入重建；留一段時間讓 drain 真的開跑。
+  await new Promise(function (resolve) { setTimeout(resolve, 200); });
+  assert.equal(made.keeper.list().length, 0, 'enabled=false 不得做啟動掃描');
+  assert.equal(made.keeper.queue.length, 0, 'enabled=false 不得留下佇列');
+  assert.equal(indexCalls.calls, 0, 'enabled=false 不得自動重建');
+  assert.equal(made.keeper.status().enabled, false, 'status 要能讀到關閉狀態');
+  assert.equal(made.keeper.status().queue.length, 0);
+
+  // 開關打開後，下一次掃描（這裡以 refresh 模擬 timer tick）要恢復排入。
+  made.config.enabled = true;
+  await made.keeper.refresh('manual');
+  assert.equal(made.keeper.status().stats.sinceStartRebuildsQueued, 1, '開啟後掃描要排入重建');
+  await waitFor(function () {
+    return made.keeper.running === undefined && made.keeper.list()[0].rebuildState === 'idle';
+  }, { timeoutMs: 8000, label: '開啟後重建完成' });
+  assert.equal(indexCalls.calls, 1);
+});
+
+test('總開關：enabled=false 時人工 enqueue 仍會重建（停的是自動化，不是手動）', async function (t) {
+  const root = '/srv/disabled-manual';
+  const made = await makeKeeper(t, {
+    label: 'disabled-manual',
+    projects: [fakeProject({ name: 'manual-while-disabled', rootPath: root, graphHead: '3449ba2' })],
+    sha: { [root]: '96cd57b' },
+    facts: { behindBy: 1 },
+    config: { autoRebuild: false, rebuildCooldownSeconds: 0 },
+  });
+  const indexCalls = countIndexCalls(made.keeper);
+
+  await made.keeper.start();
+  assert.equal(made.keeper.list().length, 1);
+  made.config.enabled = false;
+
+  // 模擬 routes `/rebuild` 的人工排入：reason 是 manual，且 force 略過冷卻。
+  assert.equal(made.keeper.enqueue(root, 'manual', undefined, { force: true }), true);
+  await waitFor(function () {
+    return made.keeper.running === undefined && made.keeper.list()[0].rebuildState === 'idle';
+  }, { timeoutMs: 8000, label: '停用期間的人工重建完成' });
+
+  assert.equal(indexCalls.calls, 1);
+  assert.equal(made.keeper.status().stats.sinceStartRebuildsSucceeded, 1);
+  assert.equal(made.keeper.list()[0].lastError, undefined);
+});
+
+test('總開關：true→false 時清掉尚未開始的自動佇列、落盤 idle、running 不中止', async function (t) {
+  const rootA = '/srv/disabled-queue-a';
+  const rootB = '/srv/disabled-queue-b';
+  const made = await makeKeeper(t, {
+    label: 'disabled-queue',
+    projects: [
+      fakeProject({ name: 'queue-a', rootPath: rootA, graphHead: '3449ba2' }),
+      fakeProject({ name: 'queue-b', rootPath: rootB, graphHead: '3449ba2' }),
+    ],
+    sha: { [rootA]: '96cd57b', [rootB]: '96cd57b' },
+    facts: { behindBy: 1 },
+    // 讓 A 跑得夠久，B 才有機會停在「尚未開始」的狀態。
+    cbm: { delayMs: 1500 },
+    config: { autoRebuild: false, rebuildCooldownSeconds: 0 },
+  });
+  const indexCalls = countIndexCalls(made.keeper);
+
+  await made.keeper.start();
+  assert.equal(made.keeper.enqueue(rootA, 'stale:timer'), true);
+  await waitFor(function () { return made.keeper.running !== undefined; }, { timeoutMs: 8000, label: 'A 開始重建' });
+  assert.equal(made.keeper.enqueue(rootB, 'stale:timer'), true);
+  assert.equal(made.keeper.queue.length, 1, 'B 應停在佇列裡');
+
+  made.config.enabled = false;
+  await made.keeper.onConfigChanged();
+
+  assert.equal(made.keeper.queue.length, 0, '停用後不得留下自動佇列');
+  assert.equal(made.keeper.running !== undefined, true, '正在跑的重建不得被中止');
+  const recordB = made.keeper.list().find(function (record) { return record.key === rootB; });
+  assert.equal(recordB.rebuildState, 'idle', '被清掉的自動項目要回到 idle');
+
+  const cleared = made.log.entries.filter(function (entry) { return entry.event === 'queue.cleared'; });
+  assert.equal(cleared.length, 1, '清佇列要留下可觀測的日誌');
+  assert.equal(cleared[0].level, 'info');
+  assert.equal(cleared[0].data.reason, 'disabled');
+  assert.equal(cleared[0].data.count, 1);
+
+  const persisted = JSON.parse(await readFile(join(made.home, 'state.json'), 'utf8'));
+  assert.equal(persisted.projects[rootB].rebuildState, 'idle', '清掉的佇列要落盤成 idle');
+
+  // A 完成後 B 也不得被偷跑。
+  await waitFor(function () {
+    return made.keeper.running === undefined && made.keeper.queue.length === 0;
+  }, { timeoutMs: 8000, label: 'A 收尾且佇列保持清空' });
+  assert.equal(indexCalls.calls, 1, 'B 不得在停用期間被重建');
+});
+
+test('總開關：停用後殘留的自動項目不會被 drainLoop 消化', async function (t) {
+  const rootA = '/srv/disabled-drain-a';
+  const rootB = '/srv/disabled-drain-b';
+  const made = await makeKeeper(t, {
+    label: 'disabled-drain',
+    projects: [
+      fakeProject({ name: 'drain-a', rootPath: rootA, graphHead: '3449ba2' }),
+      fakeProject({ name: 'drain-b', rootPath: rootB, graphHead: '3449ba2' }),
+    ],
+    sha: { [rootA]: '96cd57b', [rootB]: '96cd57b' },
+    facts: { behindBy: 1 },
+    cbm: { delayMs: 800 },
+    config: { autoRebuild: false, rebuildCooldownSeconds: 0 },
+  });
+  const indexCalls = countIndexCalls(made.keeper);
+
+  await made.keeper.start();
+  assert.equal(made.keeper.enqueue(rootA, 'stale:timer'), true);
+  await waitFor(function () { return made.keeper.running !== undefined; }, { timeoutMs: 8000, label: 'A 開始重建' });
+  assert.equal(made.keeper.enqueue(rootB, 'stale:timer'), true);
+  // 刻意不呼叫 onConfigChanged：這裡驗的是 drainLoop 自己的第二道閘門。
+  made.config.enabled = false;
+
+  await waitFor(function () {
+    return made.keeper.running === undefined && made.keeper.queue.length === 0;
+  }, { timeoutMs: 8000, label: 'A 收尾且殘留項目被跳過' });
+
+  assert.equal(indexCalls.calls, 1, 'B 不得在停用期間被重建');
+  const recordB = made.keeper.list().find(function (record) { return record.key === rootB; });
+  assert.equal(recordB.rebuildState, 'idle');
+  const dropped = made.log.entries.filter(function (entry) { return entry.event === 'queue.cleared'; });
+  assert.equal(dropped.length, 1);
+  assert.equal(dropped[0].data.reason, 'disabled');
+  const persisted = JSON.parse(await readFile(join(made.home, 'state.json'), 'utf8'));
+  assert.equal(persisted.projects[rootB].rebuildState, 'idle');
+});
+
+test('總開關：disabled 啟動後打開，崩潰前卡在 running 的重建會被 recoverIntent 接回', async function (t) {
+  const root = '/srv/disabled-recover';
+  const made = await makeKeeper(t, {
+    label: 'disabled-recover',
+    projects: [fakeProject({ name: 'crashy', rootPath: root, graphHead: '3449ba2' })],
+    // 圖譜與工作樹一致：確保之後的排入只可能來自崩潰恢復，不會是 stale。
+    sha: { [root]: '3449ba2' },
+    config: { enabled: false, autoRebuild: true, rebuildCooldownSeconds: 0 },
+  });
+  // 模擬前一次崩潰：狀態檔停在 running。
+  await writeFile(join(made.home, 'state.json'), JSON.stringify({
+    version: STATE_VERSION,
+    updatedAt: new Date().toISOString(),
+    projects: {
+      [root]: {
+        name: 'crashy',
+        rootPath: root,
+        rebuildState: 'running',
+        rebuildRequestedAt: new Date().toISOString(),
+        rebuildReason: 'stale:startup',
+      },
+    },
+    watchers: {},
+  }), 'utf8');
+  const indexCalls = countIndexCalls(made.keeper);
+
+  await made.keeper.start();
+  await new Promise(function (resolve) { setTimeout(resolve, 100); });
+  assert.equal(made.keeper.list().length, 0, 'disabled 啟動不做掃描');
+  assert.equal(indexCalls.calls, 0, 'disabled 啟動不得恢復重建');
+
+  // 使用者在設定頁把總開關打開：這裡要補跑啟動掃描＋崩潰恢復。
+  made.config.enabled = true;
+  await made.keeper.onConfigChanged();
+  assert.equal(made.keeper.list().length, 1, '打開後要建立 records，才能接回崩潰意圖');
+
+  await waitFor(function () {
+    return made.keeper.running === undefined && made.keeper.list()[0].rebuildState === 'idle';
+  }, { timeoutMs: 8000, label: '崩潰意圖被接回並重建完成' });
+
+  const stats = made.keeper.status().stats;
+  assert.equal(stats.sinceStartRebuildsQueued, 1);
+  assert.equal(stats.sinceStartRebuildsSucceeded, 1);
+  assert.equal(indexCalls.calls, 1);
+
+  const queued = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.queued'; });
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0].data.reason, 'crash-recovery', '排入原因要是崩潰恢復');
+
+  const recovered = made.log.entries.filter(function (entry) { return entry.event === 'rebuild.recovered'; });
+  assert.equal(recovered.length, 1);
+  assert.equal(recovered[0].data.count, 1);
+
+  const persisted = JSON.parse(await readFile(join(made.home, 'state.json'), 'utf8'));
+  assert.equal(persisted.projects[root].rebuildState, 'idle', '狀態不得再卡在 running');
 });

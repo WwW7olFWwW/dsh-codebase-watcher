@@ -340,11 +340,138 @@ test('內文不是 JSON 物件時回 400 並留下路由標籤', async function 
   });
   assert.equal(response.status, 400);
   assert.equal(response.json().route, 'rebuild');
+  assert.equal(response.json().code, 'bad-request');
   assert.match(response.json().error, /JSON 物件/);
   assert.equal(fixture.log.entries.some(function (entry) { return entry.event === 'route.failed'; }), true);
 
+  const malformed = await call(fixture.byPath[API_PREFIX + '/rebuild'], {
+    method: 'POST',
+    url: API_PREFIX + '/rebuild',
+    body: '{"id":',
+  });
+  assert.equal(malformed.status, 400, '壞掉的 JSON 是請求錯誤，不是 500');
+  assert.equal(malformed.json().code, 'bad-request');
+  assert.equal(malformed.json().route, 'rebuild');
+
   const empty = await call(fixture.byPath[API_PREFIX + '/rebuild'], { method: 'POST', url: API_PREFIX + '/rebuild' });
   assert.equal(empty.status, 200, '空內文視為空物件，不是錯誤');
+});
+
+test('輸入驗證：id 有出現但不是非空字串 → 400，且不會被當成「全部」', async function () {
+  const invalidIds = [123, { path: '/srv/a' }, ['/srv/a'], null, ''];
+
+  for (const id of invalidIds) {
+    const label = JSON.stringify(id);
+
+    const checkFixture = makeFixture({
+      keeper: { listPayload: [{ key: '/srv/a', name: 'a', selected: true }] },
+    });
+    const checked = await call(checkFixture.byPath[API_PREFIX + '/check'], {
+      method: 'POST', url: API_PREFIX + '/check', body: JSON.stringify({ id }),
+    });
+    assert.equal(checked.status, 400, 'check 的 id=' + label);
+    assert.equal(checked.json().code, 'bad-request');
+    assert.equal(checked.json().route, 'check');
+    assert.deepEqual(checkFixture.keeper.checkCalls, [], 'id 錯誤時不得往下打 CLI，更不得當成全部');
+
+    const rebuildFixture = makeFixture({
+      keeper: { listPayload: [{ key: '/srv/a', name: 'a', selected: true, stale: true }] },
+    });
+    const rebuilt = await call(rebuildFixture.byPath[API_PREFIX + '/rebuild'], {
+      method: 'POST', url: API_PREFIX + '/rebuild', body: JSON.stringify({ id, force: true }),
+    });
+    assert.equal(rebuilt.status, 400, 'rebuild 的 id=' + label);
+    assert.equal(rebuilt.json().code, 'bad-request');
+    assert.equal(rebuilt.json().route, 'rebuild');
+    assert.deepEqual(rebuildFixture.keeper.enqueued, [], 'id 錯誤時不得排入任何重建（force 也不行）');
+
+    const watcherFixture = makeFixture();
+    const watched = await call(watcherFixture.byPath[API_PREFIX + '/watchers'], {
+      method: 'POST', url: API_PREFIX + '/watchers', body: JSON.stringify({ id, action: 'pause' }),
+    });
+    assert.equal(watched.status, 400, 'watchers 的 id=' + label);
+    assert.equal(watched.json().code, 'bad-request');
+    assert.equal(watched.json().route, 'watchers');
+    assert.deepEqual(watcherFixture.keeper.watcherCalls, [], 'id 錯誤時不得影響全部專案');
+  }
+
+  // 未帶 id 仍維持「全部」語意——上面擋的是型別錯誤，不是禁止省略 id。
+  const allCheck = makeFixture({ keeper: { listPayload: [{ key: '/srv/a', name: 'a', selected: true }] } });
+  const whole = await call(allCheck.byPath[API_PREFIX + '/check'], {
+    method: 'POST', url: API_PREFIX + '/check', body: '{}',
+  });
+  assert.equal(whole.status, 200);
+  assert.deepEqual(allCheck.keeper.checkCalls, [undefined], '未帶 id 代表全部');
+
+  const allRebuild = makeFixture({
+    keeper: { listPayload: [{ key: '/srv/a', name: 'a', selected: true, stale: true }] },
+  });
+  const queued = await call(allRebuild.byPath[API_PREFIX + '/rebuild'], {
+    method: 'POST', url: API_PREFIX + '/rebuild', body: JSON.stringify({ force: true }),
+  });
+  assert.equal(queued.status, 200);
+  assert.deepEqual(allRebuild.keeper.enqueued, [{ key: '/srv/a', reason: 'manual', mode: undefined, force: true }]);
+
+  const allWatchers = makeFixture();
+  const paused = await call(allWatchers.byPath[API_PREFIX + '/watchers'], {
+    method: 'POST', url: API_PREFIX + '/watchers', body: JSON.stringify({ action: 'pause' }),
+  });
+  assert.equal(paused.status, 200);
+  assert.deepEqual(allWatchers.keeper.watcherCalls, [{ key: undefined, action: 'pause' }]);
+});
+
+test('內部錯誤：handler 拋錯回 500 code=internal，不洩漏 stack，也不再偽裝成 400', async function () {
+  const stateFixture = makeFixture({
+    keeper: { status: function () { throw new Error('磁碟讀取失敗：EIO'); } },
+  });
+  const state = await call(stateFixture.byPath[API_PREFIX + '/state']);
+  assert.equal(state.status, 500, 'EIO 是伺服器故障，不是使用者請求錯');
+  assert.equal(state.json().code, 'internal');
+  assert.equal(state.json().route, 'state');
+  assert.match(state.json().error, /EIO/);
+  assert.equal(state.json().stack, undefined, '不得把 stack 當欄位回出去');
+  assert.doesNotMatch(state.json().error, /\n\s+at /, 'error 訊息不得夾帶 stack frame');
+  const failed = stateFixture.log.entries.find(function (entry) { return entry.event === 'route.failed'; });
+  assert.equal(failed.level, 'error', '內部錯誤要用 error 等級記日誌');
+
+  const logFixture = makeFixture();
+  logFixture.log.recent = function () { throw new Error('日誌檔損壞'); };
+  const log = await call(logFixture.byPath[API_PREFIX + '/log']);
+  assert.equal(log.status, 500);
+  assert.equal(log.json().code, 'internal');
+  assert.equal(log.json().route, 'log');
+
+  const checkFixture = makeFixture({
+    keeper: {
+      listPayload: [{ key: '/srv/a', name: 'a', selected: true }],
+      check: async function () { throw new Error('spawn EACCES'); },
+    },
+  });
+  const checked = await call(checkFixture.byPath[API_PREFIX + '/check'], {
+    method: 'POST', url: API_PREFIX + '/check', body: JSON.stringify({ id: '/srv/a' }),
+  });
+  assert.equal(checked.status, 500, '拋錯不是 502 的業務失敗，而是 500');
+  assert.equal(checked.json().code, 'internal');
+  assert.equal(checked.json().route, 'check');
+});
+
+test('錯誤契約：handler 直接回 400 時也帶 route 與 code=bad-request', async function () {
+  const watcherFixture = makeFixture();
+  const invalidAction = await call(watcherFixture.byPath[API_PREFIX + '/watchers'], {
+    method: 'POST', url: API_PREFIX + '/watchers', body: JSON.stringify({ action: 'drop' }),
+  });
+  assert.equal(invalidAction.status, 400);
+  assert.equal(invalidAction.json().route, 'watchers');
+  assert.equal(invalidAction.json().code, 'bad-request');
+
+  const configFixture = makeFixture({ updateConfig: async function () {} });
+  const unknownOnly = await call(configFixture.byPath[API_PREFIX + '/config'], {
+    method: 'POST', url: API_PREFIX + '/config', body: JSON.stringify({ scanMs: 1 }),
+  });
+  assert.equal(unknownOnly.status, 400);
+  assert.equal(unknownOnly.json().route, 'config');
+  assert.equal(unknownOnly.json().code, 'bad-request');
+  assert.deepEqual(unknownOnly.json().unknown, ['scanMs']);
 });
 
 test('C6：POST /rebuild 的 force 會傳進 enqueue（冷卻閘門不再擋掉人工重建）', async function (t) {
