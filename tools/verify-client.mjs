@@ -1729,7 +1729,20 @@ async function main() {
       return /\{\w+\}/.test(text) ? undefined : text;
     };
 
-    router.mode = 'live';
+    // fixture-only 是真的不連伺服器：這條用夾具裡已知的 code 驗字典，
+    // 不能因為本機剛好有 dsh web 才通過（CI 沒有伺服器時會抓到 0 條）。
+    if (FIXTURE_ONLY === true) {
+      router.mode = 'fixture';
+      router.fixture = makeFixture({
+        status: Object.assign(makeFixture().status, {
+          warnings: [{ code: 'version-unexpected', message: 'fixture warning' }],
+        }),
+        caveats: [{ code: 'parse-partial', message: 'fixture caveat' }],
+      });
+      router.reset();
+    } else {
+      router.mode = 'live';
+    }
     const liveEn = mini.mount(enRegistration.Component, {});
     await liveEn.settle();
     await liveEn.waitUntil(function (html) { return !html.includes('Loading'); }, 8000);
