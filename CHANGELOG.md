@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-21
+
+### Fixed
+
+- **`--fixture-only` 真的不連伺服器**：英文字典覆蓋檢查原本在 fixture 模式仍會打 live
+  `/state`；本機有 `dsh web` 時看起來通過，CI 沒有伺服器就只抓到 0 條。現在改用夾具裡
+  已知的 warning／caveat code（`version-unexpected`、`parse-partial`）驗證字典，不再偷連線。
+
 ## [0.7.0] - 2026-10-21
 
 ### Fixed
@@ -455,7 +463,8 @@
 - 單元測試 115 項，`node --test test/*.test.js` 全綠，不需要真的索引；CI 在 Node 20／22／24
   與「有／沒有 chokidar」六種組合上跑，且在沒有安裝 DSH 的機器上也能全綠（解析路徑用夾具驗證）。
 
-[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.0...v0.6.1
