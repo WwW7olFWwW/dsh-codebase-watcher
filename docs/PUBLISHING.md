@@ -48,7 +48,7 @@
    npm pack --dry-run
    ```
 
-   在 0.6.2 上實測：**28 個檔案、package 約 146 kB、解開後約 449 kB**（2026-10-20 量測）。
+   在 0.7.0 上實測：**28 個檔案、package 約 157 kB、解開後約 482 kB**（2026-10-21 量測）。
    內容是 `lib/**/*.js`、`cordis.patch.yml`、README 兩份、CHANGELOG、CONTRIBUTING、
    SECURITY、LICENSE、`docs/*.md`。這個套件**沒有建置步驟**（沒有 `prepare`／`prepublishOnly`），
    發布出去的就是原始碼本身，所以看到什麼就等於裝到什麼。

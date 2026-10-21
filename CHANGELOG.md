@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-21
+
 ### Fixed
 
 - **側邊欄指示不再只靠顏色**：展開的側邊欄直接寫「落後 N · 失敗 N · 掃描失敗」，不再
@@ -453,7 +455,8 @@
 - 單元測試 115 項，`node --test test/*.test.js` 全綠，不需要真的索引；CI 在 Node 20／22／24
   與「有／沒有 chokidar」六種組合上跑，且在沒有安裝 DSH 的機器上也能全綠（解析路徑用夾具驗證）。
 
-[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/WwW7olFWwW/dsh-codebase-watcher/releases/tag/v0.6.0

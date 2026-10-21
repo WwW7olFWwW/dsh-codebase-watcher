@@ -111,7 +111,7 @@ The full comparison is in section 7 of [`docs/REQUIREMENTS.md`](docs/REQUIREMENT
 
 | Plugin | DSH | Codebase Memory |
 |---|---|---|
-| `0.6.x` | `>=0.2.0-rc.2` (verified locally on 0.2.1-rc.2; declared via `engines.dsh`) | `codebase-memory-mcp@0.11.0` (versions outside the list turn into a card warning) |
+| `0.7.x` | `>=0.2.0-rc.2` (verified locally on 0.2.1-rc.2; declared via `engines.dsh`) | `codebase-memory-mcp@0.11.0` (versions outside the list turn into a card warning) |
 
 ## Configuration
 
