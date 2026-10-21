@@ -2338,11 +2338,13 @@ async function main() {
   checks.ok('指示帶 aria-label 與 title',
     badgeWarn.html.includes('aria-label="CBM 圖譜: 1 個專案落後"') && badgeWarn.html.includes('title="CBM 圖譜: 1 個專案落後"'));
   checks.ok('指示有 role="status" 當 live region', badgeWarn.html.includes('role="status"'));
-  checks.ok('warn 顯示待處理專案數', badgeWarn.text(function (node) {
+  checks.ok('warn 藥丸寫出「落後 1」而不是只有數字', badgeWarn.text(function (node) {
     return node.props['data-dsw-indicator'] !== undefined;
-  }) === '1');
-  checks.ok('展開時是藥丸（不搶軌道的版面）', indicatorCss(badgeWarn).includes('height:26px')
-    && indicatorCss(badgeWarn).includes('flex:0 0 auto'), indicatorCss(badgeWarn));
+  }) === '落後 1');
+  checks.ok('warn 圓點是圓形', badgeWarn.html.includes('border-radius:50%'));
+  checks.ok('展開時是藥丸，空間不夠可縮短（不硬撐破版）', indicatorCss(badgeWarn).includes('height:26px')
+    && indicatorCss(badgeWarn).includes('flex:0 1 auto')
+    && indicatorCss(badgeWarn).includes('min-width:0'), indicatorCss(badgeWarn));
   badgeWarn.unmount();
 
   // 收合成 56px 軌道：只留圓點，資訊仍在 title／aria-label
@@ -2373,7 +2375,26 @@ async function main() {
   checks.ok('error 標示同時說出落後、失敗與掃描失敗',
     badgeError.html.includes('1 個專案落後') && badgeError.html.includes('2 個專案失敗')
     && badgeError.html.includes('上次掃描失敗'));
+  checks.ok('error 藥丸也直接寫出落後、失敗與掃描失敗', (function () {
+    const text = badgeError.text(function (node) { return node.props['data-dsw-indicator'] !== undefined; });
+    return text.indexOf('落後 1') !== -1 && text.indexOf('失敗 2') !== -1
+      && text.indexOf('掃描失敗') !== -1 && text.indexOf('!') === -1;
+  })());
+  checks.ok('error 圓點是菱形（不只靠顏色）', badgeError.html.includes('rotate(45deg)')
+    && badgeError.html.includes('border-radius:2px'));
   badgeError.unmount();
+
+  // 只有掃描失敗（專案都新鮮）：藥丸要說原因，不能只丟一個「!」。
+  router.fixture = makeFixture({
+    status: Object.assign(makeFixture().status, { lastRefreshError: 'demo scan failure' }),
+    projects: [makeProject({})],
+  });
+  const badgeScan = mountBadge();
+  await badgeScan.settle();
+  checks.ok('只有掃描失敗時，藥丸說「掃描失敗」', badgeScan.text(function (node) {
+    return node.props['data-dsw-indicator'] !== undefined;
+  }) === '掃描失敗');
+  badgeScan.unmount();
 
   // 輪詢：30 秒起跳、背景暫停、卸載即停
   router.mode = 'fixture';

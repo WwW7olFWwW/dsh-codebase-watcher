@@ -1,6 +1,6 @@
 # 產品優化記錄
 
-> 更新：2026-10-21（Round 1～Round 12 完成）
+> 更新：2026-10-21（Round 1～Round 13 完成）
 > 產品：`dsh-codebase-watcher` — 讓 Codebase Memory（CBM）圖譜自動跟上各專案 git HEAD 的 DSH 外掛。
 > 技術棧：純 ESM Node（`lib/`，無建置）＋ React `createElement` 客戶端（`lib/client.js`）＋ `node:test`。
 
@@ -9,8 +9,8 @@
 | 項目 | 指令 | 結果 |
 | --- | --- | --- |
 | 單元／整合測試 | `node --test test/*.test.js` | **244 / 244 pass，0 fail**（約 55 秒） |
-| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **312 / 312**（數字穩定，CI 同指令） |
-| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **314 / 314**（4 個 live 專案時；數量隨 per-project 檢查變動） |
+| 客戶端渲染（CI） | `node tools/verify-client.mjs --fixture-only`（不需 `dsh web`） | **316 / 316**（數字穩定，CI 同指令） |
+| 客戶端渲染（完整） | `node tools/verify-client.mjs`（需執行中的 `dsh web`） | **318 / 318**（4 個 live 專案時；數量隨 per-project 檢查變動） |
 | Keeper 行為 | `node tools/verify-keeper.mjs`（需真實 CBM 與已索引專案） | **23 / 23** |
 | 文件漂移 | `npm run docs:check` | 全綠（CI 同指令） |
 | 語法 | `npm run test:syntax` | 通過 |
@@ -160,7 +160,20 @@
 - **驗證**：verify-client `--fixture-only` 306/306（字串改動，斷言數量不變）；`docs:check` 8 項。
 - **殘留**：兩處都只有文字，沒有「一鍵清除篩選」按鈕；chips 就在上方，成本效益不足。
 
+### Round 13 — 側邊欄指示：文字＋形狀，不再只靠顏色
+
+- **寬版**：藥丸直接寫「落後 2 · 失敗 1 · 掃描失敗」；只有掃描失敗時也說「掃描失敗」，
+  不再是一個看不懂的 `!`。文字過長時可省略（`title`／`aria-label` 仍有完整句子）。
+- **形狀**：error 是菱形、warn 是圓形——灰階或色盲仍能分辨，不再只靠紅／黃。
+- **實測**（1180px 真瀏覽器，假 `/state`）：展開側欄藥丸 170×28、頁面無橫向溢出；
+  收合成 56px 軌道變 20×36、無文字。截圖 `~/scratch/ui-audit/r13-sidebar.png`、`r13-rail.png`。
+- **驗證**：fixture 316/316（新增 4 條）、完整 318/318；單元測試不受影響。
+- **殘留**：指示仍不可點擊——這個 slot 的 owner prop 只有 `wide`，沒有開啟設定頁的介面；
+  詳細清單留在卡片與 `title`。
+
 ## 待辦（依影響排序）
+
+目前沒有外掛端的已知缺陷；剩下的都是產品決策（見下節）。
 
 | 優先 | 項目 | 證據／現況 | 建議 |
 | --- | --- | --- | --- |
@@ -188,7 +201,7 @@
 npm test                      # 244
 npm run test:syntax
 npm run docs:check            # 文件漂移守門
-npm run verify:client:fixture # 312，不需要 dsh web（CI 同指令）
-node tools/verify-client.mjs  # 314，完整模式需 dsh web（隨 live 專案數變動）
+npm run verify:client:fixture # 316，不需要 dsh web（CI 同指令）
+node tools/verify-client.mjs  # 318，完整模式需 dsh web（隨 live 專案數變動）
 node tools/verify-keeper.mjs  # 23，需真實 CBM 與已索引專案
 ```

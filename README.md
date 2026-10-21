@@ -78,7 +78,7 @@ codebase-memory-mcp config set auto_index false
 |---|---|
 | 單元測試 | `node --test test/*.test.js` → **244 tests / 244 pass / 0 fail**（數字只增不減） |
 | Host 半邊對真實 CBM CLI | `node tools/verify-keeper.mjs` → **23/23** |
-| 客戶端渲染（夾具，無需伺服器） | `node tools/verify-client.mjs --fixture-only` → **312/312** |
+| 客戶端渲染（夾具，無需伺服器） | `node tools/verify-client.mjs --fixture-only` → **316/316** |
 
 這三條都能自己重跑。單元測試不需要先索引任何東西；`verify-keeper` 需要 CLI 在 `PATH` 與至少一個已索引專案；`verify-client` 的 `--fixture-only` 不需要伺服器（CI 同指令），去掉旗標的完整模式會再對執行中的 `dsh web` 逐值比對，數字隨 live 專案數變動。端到端那條——提交後圖譜追上、索引本身耗時——記在 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) 的驗證現況表。
 
